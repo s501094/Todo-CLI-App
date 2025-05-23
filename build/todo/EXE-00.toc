@@ -92,7 +92,7 @@
  [],
  False,
  False,
- 1748024330,
+ 1748025976,
  [('run',
    '/home/tellis/.venv/3_12_2/lib/python3.12/site-packages/PyInstaller/bootloader/Linux-64bit-intel/run',
    'EXECUTABLE')],

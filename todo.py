@@ -17,6 +17,8 @@ init(autoreset=True, strip=False)
 # ─────────────────────────────────────────────────────────────────────────
 
 DATE_FMT = "%Y-%m-%d"
+global default_due
+default_due = (date.today() + timedelta(days=4)).isoformat() 
 
 EXAMPLES = r"""
 Examples:
@@ -79,11 +81,10 @@ def save_tasks(tasks):
 
 def list_tasks(args):
     tasks = load_tasks()
-    default_due = date.today() + timedelta(days=7)
 
     def primary_key(t):
         if args.sort == "due":
-            ds = t.get("due") or default_due.isoformat()
+            ds = t.get("due") or default_due
             try:
                 return datetime.strptime(ds, DATE_FMT)
             except ValueError:
@@ -193,7 +194,7 @@ def add_task(args):
         "done": False,
         "pending": False,
         "hold": False,
-        "due": args.due or (date.today() + timedelta(days=3)),
+        "due": args.due or default_due,
         "AssignedTo": args.AssignedTo or "Tyler Ellis",
         "priority": args.priority or "low",
         "subtasks": []
@@ -202,6 +203,7 @@ def add_task(args):
     print(f"Task {nid} added.")
 
 def add_subtask(args):
+    
     tasks = load_tasks()
     for t in tasks:
         if t["id"] == args.parent_id:
@@ -213,7 +215,7 @@ def add_subtask(args):
                 "done": False,
                 "pending": False,
                 "hold": False,
-                "due": args.due or (date.today() + timedelta(days=3)),
+                "due": args.due or default_due,
                 "AssignedTo": args.AssignedTo or "Tyler Ellis",
                 "priority": args.priority or "low"
             })
