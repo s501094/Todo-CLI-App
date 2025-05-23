@@ -1,4 +1,4 @@
-('/home/tellis/todo/build/todo/PYZ-00.pyz',
+('/home/tellis/Todo-CLI-App/build/todo/PYZ-00.pyz',
  [('_compat_pickle', '/usr/lib/python3.12/_compat_pickle.py', 'PYMODULE'),
   ('_compression', '/usr/lib/python3.12/_compression.py', 'PYMODULE'),
   ('_py_abc', '/usr/lib/python3.12/_py_abc.py', 'PYMODULE'),
