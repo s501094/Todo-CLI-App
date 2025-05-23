@@ -1,164 +1,181 @@
-# Todo CLI Application
+# Todo CLI Application v2.0.0
 
-A simple, cross-platform command-line to-do list application written in Python. It supports colored output, filtering, sorting, editing, and more, all stored in a local JSON file.
+A powerful, Python‑based command‑line to‑do list with hierarchical subtasks, three‑state statuses (Not Started, Pending, Hold, Done), and colorized output. Data is stored in `~/.todo_data.json` with no external dependencies beyond a few Python packages.
 
 ---
 
 ## Features
 
-* **Add tasks** with description, due date, assignee, and priority
-* **List tasks** in a neat, colorized table
-* **Filter tasks** by completion status, keyword, or date ranges
-* **Sort tasks** by ID, due date, assignee, or priority
-* **Edit tasks**: update description, due date, assignee, or priority
-* **Complete & delete tasks** with simple commands
-* **Date filters**: `--due-before`, `--due-after`, `--due-today`, `--due-week`, `--due-month`
-* **Tab-completion** for commands and flags via `argcomplete`
-* **Portable**: runs on any system with Python 3.12+, no external database
-* **Standalone packaging**: optionally bundle into a single executable with PyInstaller
+* **Primary tasks** with arbitrary **subtasks** (IDs like `1`, `1-1`, `1-2`, etc.)
+* **Statuses**:
+
+  * ✗ Not Started (red)
+  * ● Pending / In‑Progress (yellow)
+  * ⏸ Hold / Paused (grey)
+  * ✓ Done (green)
+* **Priority** levels: `critical`, `high`, `medium`, `low`, each colorized
+* **Commands**: `add`, `subtask`, `pending`, `hold`, `complete`, `delete`, `edit`, `list`
+* **Sorting** of top‑level tasks by `id`, `due`, `assigned`, or `priority`
+* **Tab‑completion** via `argcomplete`
+* **Auto‑creation** of `~/.todo_data.json` on first run
+* **Standalone packaging** with PyInstaller (no Python needed)
+* **Built‑in** `--version` flag (`v2.0.0`)
 
 ---
 
 ## Prerequisites
 
-* Python **3.12** or later
-* [pip](https://pip.pypa.io/) to install dependencies
+* Python **3.12** (using your own virtual environment)
+* [pip](https://pip.pypa.io/) for installing dependencies
 
 ---
 
 ## Installation
 
-1. **Clone the repository**:
+1. **Clone or download** this repo:
 
    ```bash
    git clone https://github.com/yourusername/todo-cli.git
    cd todo-cli
    ```
 
-2. **Create a virtual environment** (optional, but recommended):
+2. **Activate your Python environment**:
 
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate  # Linux/macOS
-   .\.venv\Scripts\activate  # Windows
+   source /home/tellis/.venv/3_12_2/bin/activate
    ```
 
-3. **Install dependencies**:
+3. **Install required packages**:
 
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Make the script executable** (Unix/macOS):
+4. **Make the script executable** (Unix/macOS/Linux):
 
    ```bash
    chmod +x todo.py
    ln -s $(pwd)/todo.py /usr/local/bin/todo
    ```
 
-5. **Enable tab-completion** (optional):
+5. **Enable tab‑completion** (optional):
 
-   * **Bash** (`~/.bashrc`):
-
-     ```bash
-     eval "$(register-python-argcomplete todo)"
-     ```
-   * **Zsh** (`~/.zshrc`):
-
-     ```zsh
-     autoload -U +X compinit; compinit
-     autoload -U +X bashcompinit; bashcompinit
-     eval "$(register-python-argcomplete todo)"
-     ```
+   ```bash
+   # Add to ~/.bashrc or ~/.zshrc
+   eval "$(register-python-argcomplete todo)"
+   ```
 
 ---
 
 ## Usage
 
-All commands are invoked via the `todo` executable or `python todo.py`.
+Invoke via `todo ...` (or `python todo.py ...`). All examples assume you have the script on your `PATH` as `todo`.
 
-### Add a task
+### Version
 
 ```bash
-todo add "Buy groceries" --due 2025-06-01 --AssignedTo "Alice" --priority high
+$ todo --version
+todo 2.0.0
 ```
 
-* **description**: task text (required)
-* `--due YYYY-MM-DD`: due date (defaults to 1 week from today)
-* `--AssignedTo NAME`: name of the person assigned
-* `--priority [critical|high|medium|low]`: task priority
+### Add a primary task
+
+```bash
+$ todo add "Write report" --due 2025-06-10 --AssignedTo Alice --priority high
+Task 1 added.
+```
+
+### Add a subtask
+
+```bash
+$ todo subtask 1 "Draft outline" --due 2025-06-05 --AssignedTo Bob --priority medium
+Subtask 1-1 added under task 1.
+```
+
+### Change status
+
+```bash
+# Mark subtask in-progress (pending)
+todo pending 1-1
+
+# Put task on hold
+todo hold 1
+```
+
+### Complete
+
+todo complete 1-1  # ✓ on subtask
+todo complete 1    # ✓ on primary (only if no subtasks pending)
+
+### Delete
+
+todo delete 1-1   # deletes subtask
+todo delete 1     # deletes task + its subtasks
+
+### Edit a task or subtask
+
+```bash
+todo edit 1 --description "Finalize report" --due 2025-06-12 --priority critical
+```
 
 ### List tasks
 
 ```bash
-todo list
+todo list                 # show not‑started, pending, on‑hold, sorted by ID
+todo list --all           # include done items
+todo list --sort due      # sort primaries by due date
+todo list --sort priority # sort by priority
 ```
-
-Defaults to pending tasks sorted by due date.
-
-#### Options
-
-* `--all`: include completed tasks
-* `--sort [due|assigned|priority|id]`: sort field
-* `--filter KEYWORD`: search in descriptions
-* Date filters (only pending, unless `--all`):
-
-  * `--due-before YYYY-MM-DD`
-  * `--due-after YYYY-MM-DD`
-  * `--due-today`
-  * `--due-week`
-  * `--due-month`
-
-### Complete a task
-
-```bash
-todo complete 3
-```
-
-Mark task ID 3 as done.
-
-### Delete a task
-
-```bash
-todo delete 2
-```
-
-Delete task ID 2.
-
-### Edit a task
-
-```bash
-todo edit 5 --description "Write tests" --due 2025-06-10 --priority medium
-```
-
-Update any subset of fields for task ID 5.
 
 ---
 
-## Packaging
+## Packaging as a Standalone Binary
 
-To create a standalone executable (no Python required) with [PyInstaller](https://pyinstaller.org/):
+To bundle into a single executable (`dist/todo`):
 
 ```bash
-pip install pyinstaller
-pyinstaller --onefile --name todo --add-data \
-  "$PWD/.todo_data.json:todo_data.json" \
+pyinstaller \
+  --onefile \
+  --name todo \
+  --clean \
   todo.py
 ```
 
-This outputs `dist/todo` (or `dist/todo.exe` on Windows).
+After that, copy the binary to your `PATH`:
+
+```bash
+sudo cp dist/todo /usr/local/bin/
+chmod +x /usr/local/bin/todo
+```
+
+No Python interpreter is required on target systems.
 
 ---
 
-## Configuration
+## Man Page
 
-* The data file is stored at `~/.todo_data.json`.
-* On first run, an empty list is created automatically.
-* When bundled, a default template can be copied into place.
+A `todo.1` man page is included. To install:
+
+```bash
+sudo cp man/todo.1 /usr/local/share/man/man1/
+sudo mandb
+```
+
+Then run:
+
+```bash
+man todo
+```
+
+---
+
+## File Location
+
+* Data file: `~/.todo_data.json`
+* Stores all tasks, subtasks, and statuses in JSON format
 
 ---
 
 ## License
 
 MIT © Tyler Ellis
-
