@@ -193,9 +193,9 @@ def add_task(args):
         "done": False,
         "pending": False,
         "hold": False,
-        "due": args.due or "",
-        "AssignedTo": args.AssignedTo or "",
-        "priority": args.priority or "",
+        "due": args.due or (date.today() + timedelta(days=3)),
+        "AssignedTo": args.AssignedTo or "Tyler Ellis",
+        "priority": args.priority or "low",
         "subtasks": []
     })
     save_tasks(tasks)
@@ -213,9 +213,9 @@ def add_subtask(args):
                 "done": False,
                 "pending": False,
                 "hold": False,
-                "due": args.due or "",
-                "AssignedTo": args.AssignedTo or "",
-                "priority": args.priority or ""
+                "due": args.due or (date.today() + timedelta(days=3)),
+                "AssignedTo": args.AssignedTo or "Tyler Ellis",
+                "priority": args.priority or "low"
             })
             save_tasks(tasks)
             print(f"Subtask {sid} added under task {t['id']}.")
