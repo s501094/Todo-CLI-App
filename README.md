@@ -175,7 +175,3 @@ man todo
 * Stores all tasks, subtasks, and statuses in JSON format
 
 ---
-
-## License
-
-MIT © Tyler Ellis
