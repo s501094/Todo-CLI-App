@@ -18,6 +18,6 @@ missing module named _frozen_importlib_external - imported by importlib._bootstr
 excluded module named _frozen_importlib - imported by importlib (optional), importlib.abc (optional)
 missing module named winreg - imported by importlib._bootstrap_external (conditional)
 missing module named nt - imported by os (delayed, conditional, optional), ntpath (optional), shutil (conditional), importlib._bootstrap_external (conditional), ctypes (delayed, conditional)
-missing module named _winapi - imported by encodings (delayed, conditional, optional), ntpath (optional), shutil (conditional), subprocess (conditional)
+missing module named _winapi - imported by encodings (delayed, conditional, optional), ntpath (optional), subprocess (conditional), shutil (conditional)
 missing module named msvcrt - imported by subprocess (optional), colorama.winterm (optional)
 missing module named wcwidth - imported by tabulate (optional)
