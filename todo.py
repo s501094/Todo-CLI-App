@@ -124,7 +124,7 @@ def list_tasks(args):
 
         tid      = str(t["id"])
         due_date = t.get("due") or default_due
-        assigned = t.get("AssignedTo","")
+        assigned = t.get("AssignedTo","Tyler Ellis")
         prio     = t.get("priority","low").lower()
         notes    = t.get("notes","")
 
@@ -192,7 +192,7 @@ def list_tasks(args):
                 "├─ " + s_desc,
                 s_sym,
                 sub.get("due",""),
-                sub.get("AssignedTo",""),
+                sub.get("AssignedTo","Tyler Ellis"),
                 sp,
                 ""  # subtasks have no notes
             ])
@@ -219,8 +219,8 @@ def add_task(args):
         "pending":     False,
         "hold":        False,
         "due":         args.due or default_due,
-        "AssignedTo":  args.AssignedTo or "",
-        "priority":    args.priority or "",
+        "AssignedTo":  args.AssignedTo or "Tyler Ellis",
+        "priority":    args.priority or "low",
         "notes":       args.notes or "",
         "subtasks":    []
     })
@@ -240,8 +240,8 @@ def add_subtask(args):
                 "pending":     False,
                 "hold":        False,
                 "due":         args.due or default_due,
-                "AssignedTo":  args.AssignedTo or "",
-                "priority":    args.priority or "",
+                "AssignedTo":  args.AssignedTo or "Tyler Ellis",
+                "priority":    args.priority or "low",
                 "notes":       args.notes or ""
             })
             save_tasks(tasks)
