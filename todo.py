@@ -6,52 +6,54 @@ import json
 import os
 import sys
 import shutil
-import argcomplete # type: ignore
+import textwrap
+import argcomplete  # type: ignore
 from argparse import RawDescriptionHelpFormatter
 from datetime import datetime, date, timedelta
-from tabulate import tabulate # type: ignore
+from tabulate import tabulate  # type: ignore
 from colorama import Fore, Style, init
 
-# ─── Force Colorama to preserve ANSI escapes ─────────────────────────────
+# ─── Preserve ANSI color codes through Tabulate ────────────────────────────
 init(autoreset=True, strip=False)
-# ─────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 
-DATE_FMT = "%Y-%m-%d"
-global default_due
-default_due = (date.today() + timedelta(days=4)).isoformat() 
+DATE_FMT    = "%Y-%m-%d"
+default_due = (date.today() + timedelta(days=4)).isoformat()
 
 EXAMPLES = r"""
 Examples:
-  # Add a primary task (defaults due to one week out)
-  todo add "Write report" --AssignedTo Alice --priority high
+  # Show version
+  todo --version
 
-  # Add a subtask under primary task 1
-  todo subtask 1 "Draft outline" --due 2025-06-05
+  # Add a primary task (defaults due in 4 days)
+  todo add "Write report" --AssignedTo Alice --priority high --notes "Include executive summary"
 
-  # Mark subtask 1-1 as in-progress (yellow ●)
-  todo pending 1-1
+  # Add a subtask under task 1
+  todo subtask 1 "Draft outline" --due 2025-06-05 --notes "Use old template"
 
-  # Put a task or subtask on hold (grey ⏸)
-  todo hold 1
-  todo hold 1-1
+  # Change status
+  todo pending 1-1   # in-progress (yellow ●)
+  todo hold 1       # on-hold (grey ⏸)
 
-  # Complete subtask & then its parent
+  # Complete tasks
   todo complete 1-1
-  todo complete 1
+  todo complete 1    # only if no subtasks pending
 
-  # Delete a task or subtask
+  # Delete
   todo delete 1-1
   todo delete 1
 
-  # List only pending/not-started primaries, sorted by due date
-  todo list --sort due
+  # Edit notes or any field
+  todo edit 1 --notes "Notify team on Slack"
 
-  # Show absolutely everything
-  todo list --all --sort priority
+  # List
+  todo list              # show active tasks
+  todo list --all        # include done
+  todo list --sort due   # sort by due date
 """
 
 def get_data_file_path():
-    """Return path to ~/.todo_data.json, copying bundled template if frozen."""
+    """Ensure ~/.todo_data.json exists (copy bundled if frozen)."""
     user_path = os.path.expanduser("~/.todo_data.json")
     if getattr(sys, "frozen", False):
         bundled = os.path.join(sys._MEIPASS, ".todo_data.json")
@@ -65,32 +67,49 @@ def get_data_file_path():
 DATA_FILE = get_data_file_path()
 
 def load_tasks():
-    """Load tasks, ensuring subtasks and status flags exist."""
-    with open(DATA_FILE) as f:
-        tasks = json.load(f)
+    """Load and normalize tasks, recovering from JSON errors."""
+    if not os.path.exists(DATA_FILE):
+        return []
+    try:
+        with open(DATA_FILE) as f:
+            tasks = json.load(f)
+    except json.JSONDecodeError:
+        bak = DATA_FILE + ".bak"
+        shutil.copyfile(DATA_FILE, bak)
+        tasks = []
+        with open(DATA_FILE, "w") as f:
+            json.dump([], f)
     for t in tasks:
         t.setdefault("subtasks", [])
         t.setdefault("pending", False)
         t.setdefault("hold", False)
+        t.setdefault("notes", "")
     return tasks
 
 def save_tasks(tasks):
-    """Persist tasks (with subtasks) back to JSON."""
+    """Persist tasks back to JSON."""
     with open(DATA_FILE, "w") as f:
         json.dump(tasks, f, indent=2)
 
 def list_tasks(args):
     tasks = load_tasks()
+    # Compute column widths
+    term_w     = shutil.get_terminal_size().columns
+    reserved   = 4 + 3 + 10 + 15 + 8 + 20
+    avail      = max(20, term_w - reserved)
+    desc_w     = max(10, int(avail * 0.6))
+    notes_w    = max(10, avail - desc_w)
 
+    # Sorting key for primaries
     def primary_key(t):
         if args.sort == "due":
             ds = t.get("due") or default_due
             try:
                 return datetime.strptime(ds, DATE_FMT)
             except ValueError:
-                return default_due
+                return datetime.today()
         if args.sort == "assigned":
-            return t.get("AssignedTo", "").lower()
+            return t.get("AssignedTo","").lower()
         if args.sort == "priority":
             order = {"critical":0,"high":1,"medium":2,"low":3}
             return order.get(t.get("priority","low").lower(), 99)
@@ -103,68 +122,70 @@ def list_tasks(args):
         if not args.all and t.get("done"):
             continue
 
-        # Determine status & description color
+        tid      = str(t["id"])
+        due_date = t.get("due") or default_due
+        assigned = t.get("AssignedTo","")
+        prio     = t.get("priority","low").lower()
+        notes    = t.get("notes","")
+
+        # Wrap & color description
+        desc_lines = textwrap.wrap(t["description"], desc_w) or [""]
         if t.get("done"):
-            sym = Fore.GREEN + "✓" + Style.RESET_ALL
-            desc_col = Fore.GREEN + t["description"] + Style.RESET_ALL
+            status_col = Fore.GREEN + "✓" + Style.RESET_ALL
+            desc_col   = "\n".join(Fore.GREEN + ln + Style.RESET_ALL for ln in desc_lines)
         elif t.get("hold"):
-            sym = Fore.LIGHTBLACK_EX + "⏸" + Style.RESET_ALL
-            desc_col = Fore.LIGHTBLACK_EX + t["description"] + Style.RESET_ALL
+            status_col = Fore.LIGHTBLACK_EX + "⏸" + Style.RESET_ALL
+            desc_col   = "\n".join(Fore.LIGHTBLACK_EX + ln + Style.RESET_ALL for ln in desc_lines)
         elif t.get("pending"):
-            sym = Fore.YELLOW + "●" + Style.RESET_ALL
-            desc_col = Fore.YELLOW + t["description"] + Style.RESET_ALL
+            status_col = Fore.YELLOW + "●" + Style.RESET_ALL
+            desc_col   = "\n".join(Fore.YELLOW + ln + Style.RESET_ALL for ln in desc_lines)
         else:
-            sym = Fore.RED + "✗" + Style.RESET_ALL
-            desc_col = Fore.RED + t["description"] + Style.RESET_ALL
+            status_col = Fore.RED + "✗" + Style.RESET_ALL
+            desc_col   = "\n".join(Fore.RED + ln + Style.RESET_ALL for ln in desc_lines)
+
+        # Wrap notes (plain text)
+        notes_lines = textwrap.wrap(notes, notes_w) or [""]
+        notes_col   = "\n".join(notes_lines)
 
         # Color priority
-        pr = t.get("priority","low").lower()
-        if pr == "critical":
-            prio_col = Fore.MAGENTA + pr + Style.RESET_ALL
-        elif pr == "high":
-            prio_col = Fore.YELLOW + pr + Style.RESET_ALL
-        elif pr == "medium":
-            prio_col = Fore.CYAN + pr + Style.RESET_ALL
+        if prio == "critical":
+            prio_col = Fore.MAGENTA + prio + Style.RESET_ALL
+        elif prio == "high":
+            prio_col = Fore.YELLOW + prio + Style.RESET_ALL
+        elif prio == "medium":
+            prio_col = Fore.CYAN + prio + Style.RESET_ALL
         else:
-            prio_col = Fore.BLUE + pr + Style.RESET_ALL
+            prio_col = Fore.BLUE + prio + Style.RESET_ALL
 
-        rows.append([
-            str(t["id"]),
-            desc_col,
-            sym,
-            t.get("due",""),
-            t.get("AssignedTo",""),
-            prio_col
-        ])
+        rows.append([tid, desc_col, status_col, due_date, assigned, prio_col, notes_col])
 
         # Subtasks, anchored & indented
-        subs = sorted(t["subtasks"], key=lambda s: int(s["id"].split("-",1)[1]))
-        for sub in subs:
+        for sub in sorted(t["subtasks"], key=lambda s: int(s["id"].split("-",1)[1])):
             if not args.all and sub.get("done"):
                 continue
-
+            sub_lines = textwrap.wrap(sub["description"], desc_w) or [""]
             if sub.get("done"):
-                s_sym = Fore.GREEN + "✓" + Style.RESET_ALL
-                s_desc = Fore.GREEN + sub["description"] + Style.RESET_ALL
+                s_sym  = Fore.GREEN + "✓" + Style.RESET_ALL
+                s_desc = "\n".join(Fore.GREEN + ln + Style.RESET_ALL for ln in sub_lines)
             elif sub.get("hold"):
-                s_sym = Fore.LIGHTBLACK_EX + "⏸" + Style.RESET_ALL
-                s_desc = Fore.LIGHTBLACK_EX + sub["description"] + Style.RESET_ALL
+                s_sym  = Fore.LIGHTBLACK_EX + "⏸" + Style.RESET_ALL
+                s_desc = "\n".join(Fore.LIGHTBLACK_EX + ln + Style.RESET_ALL for ln in sub_lines)
             elif sub.get("pending"):
-                s_sym = Fore.YELLOW + "●" + Style.RESET_ALL
-                s_desc = Fore.YELLOW + sub["description"] + Style.RESET_ALL
+                s_sym  = Fore.YELLOW + "●" + Style.RESET_ALL
+                s_desc = "\n".join(Fore.YELLOW + ln + Style.RESET_ALL for ln in sub_lines)
             else:
-                s_sym = Fore.RED + "✗" + Style.RESET_ALL
-                s_desc = Fore.RED + sub["description"] + Style.RESET_ALL
+                s_sym  = Fore.RED + "✗" + Style.RESET_ALL
+                s_desc = "\n".join(Fore.RED + ln + Style.RESET_ALL for ln in sub_lines)
 
-            pr = sub.get("priority","low").lower()
-            if pr == "critical":
-                sp = Fore.MAGENTA + pr + Style.RESET_ALL
-            elif pr == "high":
-                sp = Fore.YELLOW + pr + Style.RESET_ALL
-            elif pr == "medium":
-                sp = Fore.CYAN + pr + Style.RESET_ALL
+            sprio = sub.get("priority","low").lower()
+            if sprio == "critical":
+                sp = Fore.MAGENTA + sprio + Style.RESET_ALL
+            elif sprio == "high":
+                sp = Fore.YELLOW + sprio + Style.RESET_ALL
+            elif sprio == "medium":
+                sp = Fore.CYAN + sprio + Style.RESET_ALL
             else:
-                sp = Fore.BLUE + pr + Style.RESET_ALL
+                sp = Fore.BLUE + sprio + Style.RESET_ALL
 
             rows.append([
                 "",
@@ -172,7 +193,8 @@ def list_tasks(args):
                 s_sym,
                 sub.get("due",""),
                 sub.get("AssignedTo",""),
-                sp
+                sp,
+                ""  # subtasks have no notes
             ])
 
     if not rows:
@@ -181,43 +203,46 @@ def list_tasks(args):
 
     print(tabulate(
         rows,
-        headers=["ID","Description","Status","Due Date","AssignedTo","Priority"],
+        headers=["ID","Description","Status","Due Date","AssignedTo","Priority","Notes"],
+        colalign=("center","left","center","center","left","center","left"),
+        stralign="left",
         tablefmt="fancy_grid"
     ))
 
 def add_task(args):
     tasks = load_tasks()
-    nid = len(tasks) + 1
+    nid   = len(tasks) + 1
     tasks.append({
-        "id": nid,
+        "id":         nid,
         "description": args.description,
-        "done": False,
-        "pending": False,
-        "hold": False,
-        "due": args.due or default_due,
-        "AssignedTo": args.AssignedTo or "Tyler Ellis",
-        "priority": args.priority or "low",
-        "subtasks": []
+        "done":        False,
+        "pending":     False,
+        "hold":        False,
+        "due":         args.due or default_due,
+        "AssignedTo":  args.AssignedTo or "",
+        "priority":    args.priority or "",
+        "notes":       args.notes or "",
+        "subtasks":    []
     })
     save_tasks(tasks)
     print(f"Task {nid} added.")
 
 def add_subtask(args):
-    
     tasks = load_tasks()
     for t in tasks:
         if t["id"] == args.parent_id:
-            idx = len(t["subtasks"]) + 1
-            sid = f"{t['id']}-{idx}"
+            idx  = len(t["subtasks"]) + 1
+            sid  = f"{t['id']}-{idx}"
             t["subtasks"].append({
-                "id": sid,
+                "id":          sid,
                 "description": args.description,
-                "done": False,
-                "pending": False,
-                "hold": False,
-                "due": args.due or default_due,
-                "AssignedTo": args.AssignedTo or "Tyler Ellis",
-                "priority": args.priority or "low"
+                "done":        False,
+                "pending":     False,
+                "hold":        False,
+                "due":         args.due or default_due,
+                "AssignedTo":  args.AssignedTo or "",
+                "priority":    args.priority or "",
+                "notes":       args.notes or ""
             })
             save_tasks(tasks)
             print(f"Subtask {sid} added under task {t['id']}.")
@@ -225,8 +250,7 @@ def add_subtask(args):
     print(f"Parent task {args.parent_id} not found.")
 
 def pending_task(args):
-    """Mark a task or subtask as in-progress."""
-    tid = args.task_id
+    tid   = args.task_id
     tasks = load_tasks()
     if "-" in tid:
         pid,_ = tid.split("-",1)
@@ -235,8 +259,8 @@ def pending_task(args):
                 for sub in t["subtasks"]:
                     if sub["id"] == tid:
                         sub["pending"] = True
-                        sub["done"] = False
-                        sub["hold"] = False
+                        sub["done"]    = False
+                        sub["hold"]    = False
                         save_tasks(tasks)
                         print(f"Subtask {tid} marked pending.")
                         return
@@ -245,16 +269,15 @@ def pending_task(args):
     for t in tasks:
         if str(t["id"]) == tid:
             t["pending"] = True
-            t["done"] = False
-            t["hold"] = False
+            t["done"]    = False
+            t["hold"]    = False
             save_tasks(tasks)
             print(f"Task {tid} marked pending.")
             return
     print(f"Task {tid} not found.")
 
 def hold_task(args):
-    """Mark a task or subtask as on-hold."""
-    tid = args.task_id
+    tid   = args.task_id
     tasks = load_tasks()
     if "-" in tid:
         pid,_ = tid.split("-",1)
@@ -262,8 +285,8 @@ def hold_task(args):
             if str(t["id"]) == pid:
                 for sub in t["subtasks"]:
                     if sub["id"] == tid:
-                        sub["hold"] = True
-                        sub["done"] = False
+                        sub["hold"]    = True
+                        sub["done"]    = False
                         sub["pending"] = False
                         save_tasks(tasks)
                         print(f"Subtask {tid} marked on-hold.")
@@ -272,8 +295,8 @@ def hold_task(args):
         return
     for t in tasks:
         if str(t["id"]) == tid:
-            t["hold"] = True
-            t["done"] = False
+            t["hold"]    = True
+            t["done"]    = False
             t["pending"] = False
             save_tasks(tasks)
             print(f"Task {tid} marked on-hold.")
@@ -281,8 +304,7 @@ def hold_task(args):
     print(f"Task {tid} not found.")
 
 def complete_task(args):
-    """Mark a task or subtask as done."""
-    tid = args.task_id
+    tid   = args.task_id
     tasks = load_tasks()
     if "-" in tid:
         pid,_ = tid.split("-",1)
@@ -290,9 +312,9 @@ def complete_task(args):
             if str(t["id"]) == pid:
                 for sub in t["subtasks"]:
                     if sub["id"] == tid:
-                        sub["done"] = True
+                        sub["done"]    = True
                         sub["pending"] = False
-                        sub["hold"] = False
+                        sub["hold"]    = False
                         save_tasks(tasks)
                         print(f"Subtask {tid} marked complete.")
                         return
@@ -304,17 +326,16 @@ def complete_task(args):
             if pending:
                 print(f"Cannot complete task {tid}: {len(pending)} subtasks still pending.")
                 return
-            t["done"] = True
+            t["done"]    = True
             t["pending"] = False
-            t["hold"] = False
+            t["hold"]    = False
             save_tasks(tasks)
             print(f"Task {tid} marked complete.")
             return
     print(f"Task {tid} not found.")
 
 def delete_task(args):
-    """Delete a task or subtask."""
-    tid = args.task_id
+    tid   = args.task_id
     tasks = load_tasks()
     if "-" in tid:
         pid,_ = tid.split("-",1)
@@ -336,24 +357,27 @@ def delete_task(args):
         print(f"Task {tid} not found.")
 
 def edit_task(args):
-    """Edit fields on a task or subtask."""
-    tid = args.task_id
+    tid   = str(args.task_id)
     tasks = load_tasks()
     for t in tasks:
         if str(t["id"]) == tid:
             if args.description: t["description"] = args.description
-            if args.due:         t["due"] = args.due
-            if args.AssignedTo:  t["AssignedTo"] = args.AssignedTo
-            if args.priority:    t["priority"] = args.priority
+            if args.due:         t["due"]         = args.due
+            if args.AssignedTo:  t["AssignedTo"]  = args.AssignedTo
+            if args.priority:    t["priority"]    = args.priority
+            if args.notes is not None:
+                t["notes"] = args.notes
             save_tasks(tasks)
             print(f"Task {tid} updated.")
             return
         for sub in t["subtasks"]:
             if sub["id"] == tid:
                 if args.description: sub["description"] = args.description
-                if args.due:         sub["due"] = args.due
-                if args.AssignedTo:  sub["AssignedTo"] = args.AssignedTo
-                if args.priority:    sub["priority"] = args.priority
+                if args.due:         sub["due"]         = args.due
+                if args.AssignedTo:  sub["AssignedTo"]  = args.AssignedTo
+                if args.priority:    sub["priority"]    = args.priority
+                if args.notes is not None:
+                    sub["notes"] = args.notes
                 save_tasks(tasks)
                 print(f"Subtask {tid} updated.")
                 return
@@ -362,17 +386,17 @@ def edit_task(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="todo",
-        description="Personal CLI To-Do App with subtasks & pending/hold status",
+        description="Personal CLI To-Do App with hierarchical subtasks, notes, and three-state status",
         epilog=EXAMPLES,
         formatter_class=RawDescriptionHelpFormatter
     )
     parser.add_argument("--version", action="version",
                         version=f"%(prog)s {VERSION}",
                         help="Show program version and exit")
+
     subs = parser.add_subparsers(dest="command", required=True)
 
-    lst = subs.add_parser("list", help="List tasks & subtasks",
-                          formatter_class=RawDescriptionHelpFormatter)
+    lst = subs.add_parser("list", help="List tasks & subtasks", formatter_class=RawDescriptionHelpFormatter)
     lst.add_argument("--all", action="store_true", help="Include completed")
     lst.add_argument("--sort", choices=["due","assigned","priority","id"], default="id",
                      help="Sort primaries by this field")
@@ -382,8 +406,8 @@ def main():
     add.add_argument("description", help="Task text")
     add.add_argument("--due", help="Due date (YYYY-MM-DD)")
     add.add_argument("--AssignedTo", help="Assignee")
-    add.add_argument("--priority", choices=["critical","high","medium","low"],
-                     help="Priority level")
+    add.add_argument("--priority", choices=["critical","high","medium","low"], help="Priority level")
+    add.add_argument("--notes", help="Notes for the task")
     add.set_defaults(func=add_task)
 
     subp = subs.add_parser("subtask", help="Add a subtask under a primary")
@@ -391,16 +415,16 @@ def main():
     subp.add_argument("description", help="Subtask text")
     subp.add_argument("--due", help="Due date (YYYY-MM-DD)")
     subp.add_argument("--AssignedTo", help="Assignee")
-    subp.add_argument("--priority", choices=["critical","high","medium","low"],
-                      help="Priority level")
+    subp.add_argument("--priority", choices=["critical","high","medium","low"], help="Priority level")
+    subp.add_argument("--notes", help="Notes for the subtask")
     subp.set_defaults(func=add_subtask)
 
-    pend = subs.add_parser("pending", help="Mark a task/subtask as in-progress (yellow ●)")
+    pend = subs.add_parser("pending", help="Mark a task/subtask in-progress (yellow ●)")
     pend.add_argument("task_id", help="ID or subtask ID (e.g. 1-1)")
     pend.set_defaults(func=pending_task)
 
-    hold = subs.add_parser("hold", help="Mark a task/subtask as on-hold (grey ⏸)")
-    hold.add_argument("task_id", help="ID or subtask ID (e.g. 1-1)")
+    hold = subs.add_parser("hold", help="Mark a task/subtask on-hold (grey ⏸)")
+    hold.add_argument("task_id", help="ID or subtask ID")
     hold.set_defaults(func=hold_task)
 
     comp = subs.add_parser("complete", help="Mark a task/subtask done (green ✓)")
@@ -413,11 +437,11 @@ def main():
 
     edt = subs.add_parser("edit", help="Edit a task or subtask")
     edt.add_argument("task_id", help="ID or subtask ID")
-    edt.add_argument("--description", help="New description text")
+    edt.add_argument("--description", help="New description")
     edt.add_argument("--due", help="New due date (YYYY-MM-DD)")
     edt.add_argument("--AssignedTo", help="New assignee")
-    edt.add_argument("--priority", choices=["critical","high","medium","low"],
-                     help="New priority level")
+    edt.add_argument("--priority", choices=["critical","high","medium","low"], help="New priority")
+    edt.add_argument("--notes", help="New notes for the task/subtask")
     edt.set_defaults(func=edit_task)
 
     argcomplete.autocomplete(parser)
