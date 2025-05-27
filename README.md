@@ -161,6 +161,7 @@ chmod +x /usr/local/bin/todo
 A `todo.1` man page is included. To install:
 
 ```bash
+sudo mkdir /usr/local/share/man/man1
 sudo cp man/todo.1 /usr/local/share/man/man1/
 sudo mandb
 ```
