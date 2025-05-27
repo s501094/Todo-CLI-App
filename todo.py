@@ -194,7 +194,7 @@ def list_tasks(args):
                 sub.get("due",""),
                 sub.get("AssignedTo","Tyler Ellis"),
                 sp,
-                ""  # subtasks have no notes
+                sub.get("notes","")  # subtasks have no notes
             ])
 
     if not rows:
