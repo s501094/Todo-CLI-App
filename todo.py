@@ -210,10 +210,35 @@ def list_tasks(args):
     ))
 
 def add_task(args):
-    tasks = load_tasks()
-    nid   = len(tasks) + 1
-    tasks.append({
-        "id":         nid,
+    t = load_tasks()
+    nid = len(t) + 1
+    if args.due:
+        if args.due == "today":
+            args.due = date.today().isoformat()
+        elif args.due == "tomorrow":
+            args.due = (date.today() + timedelta(days=1)).isoformat()
+        elif "days" in args.due:
+            args.due = (date.today() + timedelta(days=int(args.due.split()[0]))).isoformat()
+        elif args.due == "nextday" or args.due == "1 day":
+            args.due = (date.today() + timedelta(days=1)).isoformat()
+        elif args.due == "nextweek" or args.due == "1 week":
+            args.due = (date.today() + timedelta(days=7)).isoformat()
+        elif "weeks" in args.due:
+            args.due = (date.today() + timedelta(weeks=int(args.due.split()[0]))).isoformat()
+        elif args.due == "nextyear" or args.due == "1 year":
+            args.due = (date.today() + timedelta(days=366)).isoformat()  
+        elif args.due == "nextmonth" or args.due == "2 month":
+            args.due = (date.today() + timedelta(days=30)).isoformat()
+        elif "months" in args.due:
+            args.due = (date.today() + timedelta(days=int(args.due.split()[0]) * 30)).isoformat()
+        elif args.due == "nextweek" or args.due == "1 week":
+            args.due = (date.today() + timedelta(days=7)).isoformat()
+        elif args.due == "nextmonth" or args.due == "1 month":
+            args.due = (date.today() + timedelta(days=30)).isoformat()
+        else:
+            args.due = args.due
+    t.append({
+        "id": nid,
         "description": args.description,
         "done":        False,
         "pending":     False,
@@ -224,7 +249,7 @@ def add_task(args):
         "notes":       args.notes or "",
         "subtasks":    []
     })
-    save_tasks(tasks)
+    save_tasks(t)
     print(f"Task {nid} added.")
 
 def add_subtask(args):
@@ -362,11 +387,33 @@ def edit_task(args):
     for t in tasks:
         if str(t["id"]) == tid:
             if args.description: t["description"] = args.description
-            if args.due:         t["due"]         = args.due
-            if args.AssignedTo:  t["AssignedTo"]  = args.AssignedTo
-            if args.priority:    t["priority"]    = args.priority
-            if args.notes is not None:
-                t["notes"] = args.notes
+            if args.due:
+                if args.due == "today":
+                    t["due"] = date.today().isoformat()
+                elif args.due == "tomorrow":
+                    t["due"] = (date.today() + timedelta(days=1)).isoformat()
+                elif "days" in args.due:
+                    t["due"] = (date.today() + timedelta(days=int(args.due.split()[0]))).isoformat()
+                elif args.due == "nextday" or args.due == "1 day":
+                    t["due"] = (date.today() + timedelta(days=1)).isoformat()
+                elif args.due == "nextweek" or args.due == "1 week":
+                    t["due"] = (date.today() + timedelta(days=7)).isoformat()
+                elif "weeks" in args.due:
+                    t["due"] = (date.today() + timedelta(weeks=int(args.due.split()[0]))).isoformat()
+                elif args.due == "nextyear" or args.due == "1 year":
+                    t["due"] = (date.today() + timedelta(days=365)).isoformat()  
+                elif args.due == "nextmonth" or args.due == "1 month":
+                    t["due"] = (date.today() + timedelta(days=30)).isoformat()
+                elif "months" in args.due:
+                    t["due"] = (date.today() + timedelta(days=int(args.due.split()[0]) * 30)).isoformat()
+                elif args.due == "nextweek" or args.due == "1 week":
+                    t["due"] = (date.today() + timedelta(days=7)).isoformat()
+                elif args.due == "nextmonth" or args.due == "1 month":
+                    t["due"] = (date.today() + timedelta(days=30)).isoformat()
+                else:
+                    t["due"] = args.due
+            if args.AssignedTo:  t["AssignedTo"] = args.AssignedTo
+            if args.priority:    t["priority"] = args.priority
             save_tasks(tasks)
             print(f"Task {tid} updated.")
             return
