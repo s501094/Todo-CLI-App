@@ -1,5 +1,5 @@
 #!/home/tellis/.venv/3_12_2/bin/python3
-VERSION = "1.0.6"
+VERSION = "2.0.2"
 
 import argparse
 import json
@@ -22,38 +22,57 @@ default_due = (date.today() + timedelta(days=4)).isoformat()
 
 EXAMPLES = r"""
 Examples:
-  # Show version
+
+  # Show app version
   todo --version
 
-  # Add a primary task (defaults due in 4 days)
-  todo add "Write report" --AssignedTo Alice --priority high --notes "Include executive summary"
+  # Add a primary task (with optional due date, assignee, notes, tags, or categories)
+  todo add "Write report" --due 2024-06-10 --AssignedTo Alice --priority high --notes "Include exec summary" --tags work urgent --categories business reports
 
   # Add a subtask under task 1
-  todo subtask 1 "Draft outline" --due 2025-06-05 --notes "Use old template"
+  todo subtask 1 "Draft outline" --due 2024-06-12 --notes "Use Q2 template" --tags outline
 
-  # Change status
-  todo pending 1-1   # in-progress (yellow ●)
-  todo hold 1       # on-hold (grey ⏸)
+  # Mark as in-progress or on-hold
+  todo pending 1-1
+  todo hold 1
 
-  # Complete tasks
-  todo complete 1-1
-  todo complete 1    # only if no subtasks pending
+  # Complete tasks (supports multiple at once)
+  todo complete 1-1 3
+  todo complete 2-2 4
 
-  # Delete
-  todo delete 1-1
-  todo delete 1
+  # Edit a task or subtask (any field)
+  todo edit 3 --description "Update requirements doc" --notes "Ask PM for changes" --tags docs requirements
 
-  # Edit notes or any field
-  todo edit 1 --notes "Notify team on Slack"
+  # Delete one or more tasks or subtasks
+  todo delete 9 10 11 3-2
 
-  # List
-  todo list              # show active tasks
-  todo list --all        # include done
-  todo list --sort due   # sort by due date
-  todo list --sort assigned  # sort by assignee
-  todo list --tags       # show tags (if implemented)
-  todo list --categories  # show categories (if implemented)
+  # List active tasks (default hides done)
+  todo list
+
+  # List ALL tasks including completed
+  todo list --all
+
+  # Sort tasks by due date, assignee, or priority
+  todo list --sort due
+  todo list --sort assigned
+  todo list --sort priority
+
+  # Show all available tags or categories
+  todo list --tags
+  todo list --categories
+
+  # Filter tasks by tag or category (show only tasks with these)
+  todo list --tags urgent review
+  todo list --categories work personal
+
+  # Show tags/categories columns in output (even when not filtering)
+  todo list --tags --categories
+
+  # Show notes column
+  todo list --notes
+
 """
+
 
 def get_data_file_path():
     """Ensure ~/.todo_data.json exists (copy bundled if frozen)."""
@@ -543,13 +562,16 @@ def edit_task(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="todo",
-        description="Personal CLI To-Do App with hierarchical subtasks, notes, and three-state status",
+        description="A CLI based To-Do App\n"
+                    "Supports: hierarchical subtasks, status (done/pending/hold), due dates, notes, "
+                    "tags, categories, assignment, rich sorting, batch complete/delete, and more.",
         epilog=EXAMPLES,
         formatter_class=RawDescriptionHelpFormatter
     )
     parser.add_argument("--version", action="version",
                         version=f"%(prog)s {VERSION}",
                         help="Show program version and exit")
+
 
     subs = parser.add_subparsers(dest="command", required=True)
 
