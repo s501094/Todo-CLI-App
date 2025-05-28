@@ -500,36 +500,34 @@ def delete_task(args):
         save_tasks(tasks)
 
 def edit_task(args):
+    def due_str():
+        if args.due == "today":
+            return date.today().isoformat()
+        elif args.due == "tomorrow":
+            return (date.today() + timedelta(days=1)).isoformat()
+        elif "days" in args.due:
+            return (date.today() + timedelta(days=int(args.due.split()[0]))).isoformat()
+        elif args.due == "next day" or args.due == "1 day":
+            return (date.today() + timedelta(days=1)).isoformat()
+        elif args.due == "next week" or args.due == "1 week":
+            return (date.today() + timedelta(days=7)).isoformat()
+        elif "weeks" in args.due:
+            return (date.today() + timedelta(weeks=int(args.due.split()[0]))).isoformat()
+        elif args.due == "next year" or args.due == "1 year":
+            return (date.today() + timedelta(days=365)).isoformat()  
+        elif args.due == "next month" or args.due == "1 month":
+            return (date.today() + timedelta(days=30)).isoformat()
+        elif "months" in args.due:
+            return (date.today() + timedelta(days=int(args.due.split()[0]) * 30)).isoformat()
+        else:
+            return args.due
+        
     tid   = str(args.task_id)
     tasks = load_tasks()
     for t in tasks:
         if str(t["id"]) == tid:
             if args.description: t["description"] = args.description
-            if args.due:
-                if args.due == "today":
-                    t["due"] = date.today().isoformat()
-                elif args.due == "tomorrow":
-                    t["due"] = (date.today() + timedelta(days=1)).isoformat()
-                elif "days" in args.due:
-                    t["due"] = (date.today() + timedelta(days=int(args.due.split()[0]))).isoformat()
-                elif args.due == "nextday" or args.due == "1 day":
-                    t["due"] = (date.today() + timedelta(days=1)).isoformat()
-                elif args.due == "nextweek" or args.due == "1 week":
-                    t["due"] = (date.today() + timedelta(days=7)).isoformat()
-                elif "weeks" in args.due:
-                    t["due"] = (date.today() + timedelta(weeks=int(args.due.split()[0]))).isoformat()
-                elif args.due == "nextyear" or args.due == "1 year":
-                    t["due"] = (date.today() + timedelta(days=365)).isoformat()  
-                elif args.due == "nextmonth" or args.due == "1 month":
-                    t["due"] = (date.today() + timedelta(days=30)).isoformat()
-                elif "months" in args.due:
-                    t["due"] = (date.today() + timedelta(days=int(args.due.split()[0]) * 30)).isoformat()
-                elif args.due == "nextweek" or args.due == "1 week":
-                    t["due"] = (date.today() + timedelta(days=7)).isoformat()
-                elif args.due == "nextmonth" or args.due == "1 month":
-                    t["due"] = (date.today() + timedelta(days=30)).isoformat()
-                else:
-                    t["due"] = args.due
+            if args.due:         t["due"] = due_str()
             if args.AssignedTo:  t["AssignedTo"] = args.AssignedTo
             if args.priority:    t["priority"] = args.priority
             if args.notes is not None:
@@ -545,7 +543,7 @@ def edit_task(args):
         for sub in t["subtasks"]:
             if sub["id"] == tid:
                 if args.description: sub["description"] = args.description
-                if args.due:         sub["due"]         = args.due
+                if args.due:         sub["due"] = due_str()
                 if args.AssignedTo:  sub["AssignedTo"]  = args.AssignedTo
                 if args.priority:    sub["priority"]    = args.priority
                 if args.notes is not None:
@@ -559,88 +557,187 @@ def edit_task(args):
                 return
     print(f"Task or subtask {tid} not found.")
 
+def change_status(args, field):
+    """Mark a task or subtask as done/pending/hold (depending on `field`)."""
+    tasks = load_tasks()
+    # find primary or subtask
+    pid, sid = parse_id(args.task_id)
+    for t in tasks:
+        if t['id'] == pid:
+            target = None
+            if sid:
+                for sub in t['subtasks']:
+                    if sub['id'] == args.task_id:
+                        target = sub
+                        break
+            else:
+                target = t
+            if not target:
+                print(f"ID {args.task_id} not found.")
+                return
+            
+            # if completing a primary, ensure no pending subs
+            if field == 'done' and target is t and any(not s.get('done') for s in t['subtasks']):
+                print(f"Cannot complete {args.task_id}: subtasks still pending.")
+                return
+
+            # set the three‐state flag
+            for f in ('done','pending','hold'):
+                target[f] = (f == field)
+            save_tasks(tasks)
+            print(f"{'Subtask' if sid else 'Task'} {args.task_id} marked {field}.")
+            return
+
+    print(f"ID {args.task_id} not found.")
+
 def main():
     parser = argparse.ArgumentParser(
         prog="todo",
-        description="A CLI based To-Do App\n"
-                    "Supports: hierarchical subtasks, status (done/pending/hold), due dates, notes, "
-                    "tags, categories, assignment, rich sorting, batch complete/delete, and more.",
+        description=("A CLI To-Do App with subtasks, status, due dates, notes, tags, "
+                     "categories, and rich sorting."),
         epilog=EXAMPLES,
         formatter_class=RawDescriptionHelpFormatter
     )
-    parser.add_argument("--version", action="version",
-                        version=f"%(prog)s {VERSION}",
-                        help="Show program version and exit")
-
-
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     subs = parser.add_subparsers(dest="command", required=True)
 
-    # List tasks & subtasks
-    lst = subs.add_parser("list", help="List tasks & subtasks", formatter_class=RawDescriptionHelpFormatter)
-    lst.add_argument("--all", action="store_true", help="Include completed")
-    lst.add_argument("--sort", choices=["due","assigned","priority","id"], default="id",
-                     help="Sort primaries by this field")
-    lst.add_argument("--notes", action="store_true", help="Show notes in output")
-    lst.add_argument("--tags", nargs="?", const=True, metavar="TAG", help="Show all tags, or filter by TAG")
-    lst.add_argument("--categories",nargs="?", const=True, metavar="CATEGORIES", help="Show categories in output")
-    lst.set_defaults(func=list_tasks)
+    # Centralized command specs
+    commands = {
+        'list': {
+            'func': list_tasks, 'help': 'List tasks & subtasks',
+            'args': [
+                (['--all'],     {'action':'store_true','help':'Include completed'}),
+                (['--sort'],    {'choices':['due','assigned','priority','id'],'default':'id','help':'Sort primaries'}),
+                (['--notes'],   {'action':'store_true','help':'Display notes'}),
+                (['--tags'],    {'nargs':'?','const':True,'metavar':'TAG','help':'Filter by tag'}),
+                (['--categories'],{'nargs':'?','const':True,'metavar':'CAT','help':'Filter by category'})
+            ]
+        },
+        'add': {
+            'func': add_task, 'help': 'Add a primary task',
+            'args': [
+                (['description'],{}),(['--due'],{}),(['--AssignedTo'],{}),
+                (['--priority'],{'choices':['critical','high','medium','low']}),
+                (['--notes'],{}),(['--tags'],{'nargs':'*'}),(['--categories'],{'nargs':'*'})
+            ]
+        },
+        'subtask': {
+            'func': add_subtask, 'help': 'Add a subtask',
+            'args': [
+                (['parent_id'],{'type':int}),(['description'],{}),(['--due'],{}),
+                (['--AssignedTo'],{}),(['--priority'],{'choices':['critical','high','medium','low']}),
+                (['--notes'],{}),(['--tags'],{'nargs':'*'}),(['--categories'],{'nargs':'*'})
+            ]
+        },
+        'pending':   {'func': lambda a: change_status(a,'pending'),'help':'Mark in-progress','args': [(['task_id'],{})]},
+        'hold':      {'func': lambda a: change_status(a,'hold'),   'help':'Mark on-hold',    'args': [(['task_id'],{})]},
+        'complete':  {'func': lambda a: change_status(a,'done'),   'help':'Mark done',       'args': [(['task_id'],{'nargs':'+'})]},
+        'delete':    {'func': delete_task,'help':'Delete task/subtask','args': [(['task_id'],{'nargs':'+'})]},
+        'edit':      {'func': edit_task,'help':'Edit task/subtask','args': [
+            (['task_id'],{}),(['--description'],{}),(['--due'],{}),
+            (['--AssignedTo'],{}),(['--priority'],{'choices':['critical','high','medium','low']}),
+            (['--notes'],{}),(['--tags'],{'nargs':'*'}),(['--categories'],{'nargs':'*'})
+        ]}
+    }
 
-    # Add tasks
-    add = subs.add_parser("add", help="Add a primary task")
-    add.add_argument("description", help="Task text")
-    add.add_argument("--due", help="Due date (YYYY-MM-DD)")
-    add.add_argument("--AssignedTo", help="Assignee")
-    add.add_argument("--priority", choices=["critical","high","medium","low"], help="Priority level")
-    add.add_argument("--notes", help="Notes for the task")
-    add.add_argument("--tags", nargs="*", help="Tags for the task")
-    add.add_argument("--categories", nargs="*", help="Categories for the task")
-    add.set_defaults(func=add_task)
-
-    # Add subtasks
-    subp = subs.add_parser("subtask", help="Add a subtask under a primary")
-    subp.add_argument("parent_id", type=int, help="Primary task ID")
-    subp.add_argument("description", help="Subtask text")
-    subp.add_argument("--due", help="Due date (YYYY-MM-DD)")
-    subp.add_argument("--AssignedTo", help="Assignee")
-    subp.add_argument("--priority", choices=["critical","high","medium","low"], help="Priority level")
-    subp.add_argument("--notes", help="Notes for the subtask")
-    subp.add_argument("--tags", nargs="*", help="Tags for the subtask")
-    subp.add_argument("--categories", nargs="*", help="Categories for the subtask")
-    subp.set_defaults(func=add_subtask)
-
-    # Task status changes
-    pend = subs.add_parser("pending", help="Mark a task/subtask in-progress (yellow ●)")
-    pend.add_argument("task_id", help="ID or subtask ID (e.g. 1-1)")
-    pend.set_defaults(func=pending_task)
-
-    hold = subs.add_parser("hold", help="Mark a task/subtask on-hold (grey ⏸)")
-    hold.add_argument("task_id", help="ID or subtask ID")
-    hold.set_defaults(func=hold_task)
-
-    comp = subs.add_parser("complete", help="Mark a task/subtask done (green ✓)")
-    comp.add_argument("task_id", nargs="+", help="ID or subtask ID")
-    comp.set_defaults(func=complete_task)
-
-    # Delete tasks or subtasks
-    dele = subs.add_parser("delete", help="Delete a task or subtask")
-    dele.add_argument("task_id", nargs="+", help="ID or subtask ID")
-    dele.set_defaults(func=delete_task)
-
-    # Edit tasks or subtasks
-    edt = subs.add_parser("edit", help="Edit a task or subtask")
-    edt.add_argument("task_id", help="ID or subtask ID")
-    edt.add_argument("--description", help="New description")
-    edt.add_argument("--due", help="New due date (YYYY-MM-DD)")
-    edt.add_argument("--AssignedTo", help="New assignee")
-    edt.add_argument("--priority", choices=["critical","high","medium","low"], help="New priority")
-    edt.add_argument("--notes", help="New notes for the task/subtask")
-    edt.add_argument("--tags", nargs="*", help="New tags for the task/subtask")
-    edt.add_argument("--categories", nargs="*", help="New categories for the task/subtask")
-    edt.set_defaults(func=edit_task)
+    # Build subparsers
+    for name, spec in commands.items():
+        sp = subs.add_parser(name, help=spec['help'], formatter_class=RawDescriptionHelpFormatter)
+        for flags, params in spec['args']:
+            sp.add_argument(*flags, **params)
+        sp.set_defaults(func=spec['func'])
 
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
     args.func(args)
 
-if __name__ == "__main__":
+if __name__=='__main__':
     main()
+
+# OLD MAIN FUNCTION BELOW - kept for reference, not used in final code
+
+# def main():
+#     parser = argparse.ArgumentParser(
+#         prog="todo",
+#         description="A CLI based To-Do App\n"
+#                     "Supports: hierarchical subtasks, status (done/pending/hold), due dates, notes, "
+#                     "tags, categories, assignment, rich sorting, batch complete/delete, and more.",
+#         epilog=EXAMPLES,
+#         formatter_class=RawDescriptionHelpFormatter
+#     )
+#     parser.add_argument("--version", action="version",
+#                         version=f"%(prog)s {VERSION}",
+#                         help="Show program version and exit")
+
+
+#     subs = parser.add_subparsers(dest="command", required=True)
+
+#     # List tasks & subtasks
+#     lst = subs.add_parser("list", help="List tasks & subtasks", formatter_class=RawDescriptionHelpFormatter)
+#     lst.add_argument("--all", action="store_true", help="Include completed")
+#     lst.add_argument("--sort", choices=["due","assigned","priority","id"], default="id",
+#                      help="Sort primaries by this field")
+#     lst.add_argument("--notes", action="store_true", help="Show notes in output")
+#     lst.add_argument("--tags", nargs="?", const=True, metavar="TAG", help="Show all tags, or filter by TAG")
+#     lst.add_argument("--categories",nargs="?", const=True, metavar="CATEGORIES", help="Show categories in output")
+#     lst.set_defaults(func=list_tasks)
+
+#     # Add tasks
+#     add = subs.add_parser("add", help="Add a primary task")
+#     add.add_argument("description", help="Task text")
+#     add.add_argument("--due", help="Due date (YYYY-MM-DD)")
+#     add.add_argument("--AssignedTo", help="Assignee")
+#     add.add_argument("--priority", choices=["critical","high","medium","low"], help="Priority level")
+#     add.add_argument("--notes", help="Notes for the task")
+#     add.add_argument("--tags", nargs="*", help="Tags for the task")
+#     add.add_argument("--categories", nargs="*", help="Categories for the task")
+#     add.set_defaults(func=add_task)
+
+#     # Add subtasks
+#     subp = subs.add_parser("subtask", help="Add a subtask under a primary")
+#     subp.add_argument("parent_id", type=int, help="Primary task ID")
+#     subp.add_argument("description", help="Subtask text")
+#     subp.add_argument("--due", help="Due date (YYYY-MM-DD)")
+#     subp.add_argument("--AssignedTo", help="Assignee")
+#     subp.add_argument("--priority", choices=["critical","high","medium","low"], help="Priority level")
+#     subp.add_argument("--notes", help="Notes for the subtask")
+#     subp.add_argument("--tags", nargs="*", help="Tags for the subtask")
+#     subp.add_argument("--categories", nargs="*", help="Categories for the subtask")
+#     subp.set_defaults(func=add_subtask)
+
+#     # Task status changes
+#     pend = subs.add_parser("pending", help="Mark a task/subtask in-progress (yellow ●)")
+#     pend.add_argument("task_id", help="ID or subtask ID (e.g. 1-1)")
+#     pend.set_defaults(func=pending_task)
+
+#     hold = subs.add_parser("hold", help="Mark a task/subtask on-hold (grey ⏸)")
+#     hold.add_argument("task_id", help="ID or subtask ID")
+#     hold.set_defaults(func=hold_task)
+
+#     comp = subs.add_parser("complete", help="Mark a task/subtask done (green ✓)")
+#     comp.add_argument("task_id", nargs="+", help="ID or subtask ID")
+#     comp.set_defaults(func=complete_task)
+
+#     # Delete tasks or subtasks
+#     dele = subs.add_parser("delete", help="Delete a task or subtask")
+#     dele.add_argument("task_id", nargs="+", help="ID or subtask ID")
+#     dele.set_defaults(func=delete_task)
+
+#     # Edit tasks or subtasks
+#     edt = subs.add_parser("edit", help="Edit a task or subtask")
+#     edt.add_argument("task_id", help="ID or subtask ID")
+#     edt.add_argument("--description", help="New description")
+#     edt.add_argument("--due", help="New due date (YYYY-MM-DD)")
+#     edt.add_argument("--AssignedTo", help="New assignee")
+#     edt.add_argument("--priority", choices=["critical","high","medium","low"], help="New priority")
+#     edt.add_argument("--notes", help="New notes for the task/subtask")
+#     edt.add_argument("--tags", nargs="*", help="New tags for the task/subtask")
+#     edt.add_argument("--categories", nargs="*", help="New categories for the task/subtask")
+#     edt.set_defaults(func=edit_task)
+
+#     argcomplete.autocomplete(parser)
+#     args = parser.parse_args()
+#     args.func(args)
+
+# if __name__ == "__main__":
+#     main()
