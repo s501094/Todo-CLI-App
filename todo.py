@@ -1,9 +1,10 @@
 #!/home/tellis/.venv/3_12_2/bin/python3
-VERSION = "2.0.2"
+VERSION = "2.4.1"
 
 import argparse
 import json
 import os
+import calendar
 import sys
 import shutil
 import textwrap
@@ -26,53 +27,62 @@ Examples:
   # Show app version
   todo --version
 
-  # Add a primary task (with optional due date, assignee, notes, tags, or categories)
-  todo add "Write report" --due 2024-06-10 --AssignedTo Alice --priority high --notes "Include exec summary" --tags work urgent --categories business reports
+  # Add a primary task (with optional due date, assignee, notes, tags, categories)
+  todo add "Write report" --due 2024-06-10 --AssignedTo Alice --priority high \
+    --notes "Include exec summary" --tags work urgent --categories business reports
 
   # Add a subtask under task 1
-  todo subtask 1 "Draft outline" --due 2024-06-12 --notes "Use Q2 template" --tags outline
+  todo subtask 1 "Draft outline" --due 2024-06-12 \
+    --notes "Use Q2 template" --tags outline
 
   # Mark as in-progress or on-hold
   todo pending 1-1
   todo hold 1
 
-  # Complete tasks (supports multiple at once)
-  todo complete 1-1 3
-  todo complete 2-2 4
+  # Complete one or more tasks/subtasks
+  todo complete 1-1 3 5
 
-  # Edit a task or subtask (any field)
-  todo edit 3 --description "Update requirements doc" --notes "Ask PM for changes" --tags docs requirements
-
-  # Delete one or more tasks or subtasks
+  # Delete one or more tasks/subtasks
   todo delete 9 10 11 3-2
 
-  # List active tasks (default hides done)
+  # Edit any field on a task/subtask
+  todo edit 3 --description "Update requirements doc" \
+    --due tomorrow --notes "Ask PM for changes" --tags docs requirements
+
+  # List only active tasks (hides done by default)
   todo list
 
-  # List ALL tasks including completed
+  # List all tasks including completed
   todo list --all
 
-  # Sort tasks by due date, assignee, or priority
-  todo list --sort due
-  todo list --sort assigned
-  todo list --sort priority
+  # Sort tasks
+  todo list --sort due       # by due date
+  todo list --sort assigned  # by assignee
+  todo list --sort priority  # by priority level
 
-  # Show all available tags or categories
+  # Filter by due date
+  todo list --due-today
+  todo list --due-tomorrow
+  todo list --due-before 2025-06-01
+  todo list --due-after 2025-05-15
+  todo list --due-on 2025-05-29
+  todo list --due-week        # due this 7-day span
+  todo list --due-month       # due this calendar month
+
+  # Show notes, tags or categories columns
+  todo list --notes
   todo list --tags
   todo list --categories
 
-  # Filter tasks by tag or category (show only tasks with these)
+  # Filter by tag or category
   todo list --tags urgent review
   todo list --categories work personal
 
-  # Show tags/categories columns in output (even when not filtering)
-  todo list --tags --categories
-
-  # Show notes column
-  todo list --notes
-
+  # Calendar view (days with due-tasks are colored by priority)
+  todo calendar              # current month
+  todo calendar 2025         # full year 2025
+  todo calendar 2025 06      # June 2025
 """
-
 
 def get_data_file_path():
     """Ensure ~/.todo_data.json exists (copy bundled if frozen)."""
@@ -106,6 +116,8 @@ def load_tasks():
         t.setdefault("pending", False)
         t.setdefault("hold", False)
         t.setdefault("notes", "")
+        t.setdefault("tags", [])
+        t.setdefault("categories", [])
     return tasks
 
 def save_tasks(tasks):
@@ -113,26 +125,182 @@ def save_tasks(tasks):
     with open(DATA_FILE, "w") as f:
         json.dump(tasks, f, indent=2)
 
-
 def get_all_tags_and_categories(tasks):
     tags = set()
     categories = set()
     for t in tasks:
-        for tag in t.get("tags", []):
-            tags.add(tag)
-        for cat in t.get("categories", []):
-            categories.add(cat)
+        tags.update(t.get("tags", []))
+        categories.update(t.get("categories", []))
         for sub in t.get("subtasks", []):
-            for tag in sub.get("tags", []):
-                tags.add(tag)
-            for cat in sub.get("categories", []):
-                categories.add(cat)
+            tags.update(sub.get("tags", []))
+            categories.update(sub.get("categories", []))
     return sorted(tags), sorted(categories)
+
+def wrap_and_color(text, width, color=None, prefix=""):
+    """
+    Wrap `text` to `width`, then optionally color each line
+    and prepend `prefix` to the first line.
+    """
+    lines = textwrap.wrap(text or "", width) or [""]
+    if color:
+        return "\n".join(
+            (prefix if i == 0 else " " * len(prefix))
+            + color + ln + Style.RESET_ALL
+            for i, ln in enumerate(lines)
+        )
+    else:
+        return "\n".join(
+            (prefix if i == 0 else " " * len(prefix)) + ln
+            for i, ln in enumerate(lines)
+        )
+def color_only(text: str, color: str) -> str:
+    """
+    Apply an ANSI `color` (e.g. Fore.YELLOW) to each line in `text`,
+    then reset styling at end of each line.
+    """
+    # split on existing line breaks (preserve empty lines)
+    lines = text.splitlines() or [""]
+    return "\n".join(f"{color}{line}{Style.RESET_ALL}" for line in lines)
+
+def color_status(t):
+    """
+    Return an ANSI‐colored one‐char status:
+      ✓ = done (green)
+      ● = pending (yellow)
+      ⏸ = hold    (grey)
+      ✗ = todo    (red)
+    """
+    if t.get("done"):
+        return Fore.GREEN + "✓" + Style.RESET_ALL
+    if t.get("pending"):
+        return Fore.YELLOW + "●" + Style.RESET_ALL
+    if t.get("hold"):
+        return Fore.LIGHTBLACK_EX + "⏸" + Style.RESET_ALL
+    return Fore.RED + "✗" + Style.RESET_ALL
+
+
+def color_priority(prio):
+    """
+    Return ANSI‐colored priority text.
+    """
+    p = (prio or "low").lower()
+    col = {
+        "critical": Fore.MAGENTA,
+        "high":     Fore.YELLOW,
+        "medium":   Fore.CYAN,
+        "low":      Fore.BLUE
+    }.get(p, Fore.BLUE)
+    return col + p + Style.RESET_ALL
+
+def parse_id(tid):
+    """
+    Split “1-2” into (1, "2"), or “3” into (3, None).
+    """
+    parts = str(tid).split("-", 1)
+    return int(parts[0]), parts[1] if len(parts) > 1 else None
+
+def find(tasks, tid):
+    """
+    Given a list of tasks and a task_id or subtask_id,
+    return (parent_task, subtask_dict_or_None).
+    """
+    pid, sid = parse_id(tid)
+    for t in tasks:
+        if t["id"] == pid:
+            if sid:
+                for sub in t["subtasks"]:
+                    if sub["id"] == tid:
+                        return t, sub
+            return t, None
+    return None, None
+
+def change_status(args, field):
+    """
+    Mark one or more tasks/subtasks as done/pending/hold (depending on `field`).
+    Allows `todo complete 1-1 3 4-2`, etc.
+    """
+    tasks = load_tasks()
+    # args.task_id may be a string or a list
+    ids = args.task_id if isinstance(args.task_id, list) else [args.task_id]
+    any_saved = False
+
+    for tid in ids:
+        t, sub = find(tasks, tid)
+        if not t:
+            print(f"ID {tid} not found.")
+            continue
+
+        target = sub or t
+        # if marking done on a parent, ensure no unfinished subs
+        if field == "done" and sub is None:
+            pending = [s for s in t["subtasks"] if not s.get("done")]
+            if pending:
+                print(f"Cannot complete {tid}: {len(pending)} subtasks still pending.")
+                continue
+
+        # set the three‐state flag
+        for f in ("done", "pending", "hold"):
+            target[f] = (f == field)
+
+        kind = "Subtask" if sub else "Task"
+        print(f"{kind} {tid} marked {field}.")
+        any_saved = True
+
+    if any_saved:
+        save_tasks(tasks)
+
 
 def list_tasks(args):
     tasks = load_tasks()
     all_tags, all_categories = get_all_tags_and_categories(tasks)
+ 
+    # ——— date-on filters ——————————————————————————————
+    # due today?
+    if args.due_today:
+        today = date.today().isoformat()
+        tasks = [t for t in tasks if t.get("due") == today]
 
+    # due tomorrow?
+    if args.due_tomorrow:
+        tm = (date.today() + timedelta(days=1)).isoformat()
+        tasks = [t for t in tasks if t.get("due") == tm]
+    
+    # due this month?
+    if args.due_this_month:
+        this_month = date.today().strftime("%Y-%m")
+        tasks = [t for t in tasks if t.get("due", "").startswith(this_month)]
+
+    # due on a specific date?
+    if getattr(args, "due_on", None):
+        target = args.due_on.isoformat()
+        tasks = [t for t in tasks if t.get("due") == target]
+
+    if args.due_year is not None and args.due_month is not None:
+        # new: include primaries if they or any of their subtasks are due in that month
+        def has_due_in_month(task):
+            # check the primary itself
+            d = task.get("due")
+            if d:
+                try:
+                    dt = date.fromisoformat(d)
+                except ValueError:
+                    pass
+                else:
+                    if dt.year == args.due_year and dt.month == args.due_month:
+                        return True
+            # check each subtask
+            for sub in task.get("subtasks", []):
+                sd = sub.get("due")
+                if sd:
+                    try:
+                        sdt = date.fromisoformat(sd)
+                    except ValueError:
+                        continue
+                    if sdt.year == args.due_year and sdt.month == args.due_month:
+                        return True
+            return False
+
+        tasks = [t for t in tasks if has_due_in_month(t)]        
     # ─── Handle --tags / --categories special cases ──────────────
     if args.tags is True:  # --tags provided, but no value
         if all_tags:
@@ -293,6 +461,169 @@ def list_tasks(args):
         tablefmt="fancy_grid"
     ))
 
+    # --- Generate Calendar ───────────────────────────────
+
+def generate_calendar(args):
+    tasks = load_tasks()
+
+    # brighter priority colors
+    _PRIORITY_COLORS = {
+        "critical": Fore.RED,
+        "high":     Fore.YELLOW,
+        "medium":   Fore.CYAN,
+        "low":      Fore.BLUE,
+    }
+
+
+    _PRIORITY_RANK = {p: i for i, p in enumerate(["critical","high","medium","low"])}
+
+
+    # Validate year
+    if args.year < 2024:
+        print(f"Year must be {datetime.today().year} or later.")
+        return
+    
+ # pick months (None => full year)
+    months = list(range(1,13)) if args.month is None else [args.month]
+    if any(m not in range(1,13) for m in months):
+        print("Month must be 1–12 or omitted for full year.")
+        return
+
+    def build_due_map(year, month):
+        dm = {}
+        for t in tasks:
+            if not t.get("done"):
+                for e in ([t] + t.get("subtasks", [])):
+                    d = e.get("due")
+                    try:
+                        dt = datetime.strptime(d, DATE_FMT).date()
+                    except Exception:
+                        continue
+                    if dt.year==year and dt.month==month:
+                        p = e.get("priority","low").lower()
+                        if (dt.day not in dm or
+                            _PRIORITY_RANK[p] < _PRIORITY_RANK[dm[dt.day]]):
+                            dm[dt.day] = p
+        return dm
+
+    def make_block(year, month):
+        """Return list of lines for one month."""
+        dm = build_due_map(year, month)
+        w = 20
+        blk = []
+        # header & weekdays
+        blk.append(f"{calendar.month_name[month]} {year}".center(w))
+        blk.append("Mo Tu We Th Fr Sa Su")
+        # calendar rows
+        for wk in calendar.monthcalendar(year, month):
+            parts = []
+            for d in wk:
+                if d==0:
+                    parts.append("  ")
+                elif d in dm:
+                    col = _PRIORITY_COLORS[dm[d]]
+                    parts.append(f"{col}{d:2d}{Style.RESET_ALL}")
+                else:
+                    parts.append(f"{d:2d}")
+            blk.append(" ".join(parts))
+        return blk
+
+    # single-month shortcut
+    if len(months)==1:
+        print_single_month(args.year, months[0], build_due_map(args.year, months[0]), args)
+        return
+
+    # full‐year 4×3
+    groups = [months[i:i+3] for i in range(0,12,3)]
+    width   = 20
+    spacer  = "   "
+
+    for row in groups:
+        # build 3 blocks
+        blocks = [ make_block(args.year, m) for m in row ]
+        maxl   = max(len(b) for b in blocks)
+
+        for i in range(maxl):
+            line_parts = []
+            for b in blocks:
+                if i < len(b):
+                    line_parts.append(b[i])
+                else:
+                    line_parts.append(" " * width)
+            print(spacer.join(line_parts))
+        print()  # blank line between rows
+
+def print_single_month(year:int, month:int, due_map:dict[int,str], args):
+    """Helper to print one month in the old style."""
+    
+    _PRIORITY_COLORS = {
+        "critical": Fore.RED,
+        "high":     Fore.YELLOW,
+        "medium":   Fore.CYAN,
+        "low":      Fore.BLUE,
+    }
+
+    _PRIORITY_RANK = {p: i for i, p in enumerate(["critical","high","medium","low"])}
+    
+    width = 20
+    hdr   = f"{calendar.month_name[month]} {year}"
+    print(hdr.center(width))
+    print("Mo Tu We Th Fr Sa Su")
+    for wk in calendar.monthcalendar(year, month):
+        parts = []
+        for d in wk:
+            if d == 0:
+                parts.append("  ")
+            elif d in due_map:
+                c = _PRIORITY_COLORS[due_map[d]]
+                parts.append(f"{c}{d:2d}{Style.RESET_ALL}")
+            else:
+                parts.append(f"{d:2d}")
+        print(" ".join(parts))
+    print()
+    print()  
+    print(f"Tasks due in {calendar.month_name[args.month]} {args.year}:")
+    # build a “fake” args object to drive list_tasks with only-due-this-month turned on
+    if month == datetime.today().month:
+
+        month_args = argparse.Namespace(
+            all        = args.all      if hasattr(args, "all")       else False,
+            sort       = args.sort     if hasattr(args, "sort")      else "due",
+            due_today  = False,
+            due_tomorrow = False,
+            due_on     = None,
+            due_before = None,
+            due_after  = None,
+            due_this_month  = True,
+            due_month = month,
+            due_year   = year,
+            filter     = None,
+            notes      = args.notes    if hasattr(args, "notes")    else False,
+            tags       = args.tags     if hasattr(args, "tags")     else None,
+            categories = args.categories if hasattr(args, "categories") else None,
+        )
+        list_tasks(month_args)
+    else:
+        # if not this month, just print the tasks due in that month
+        month_args = argparse.Namespace(
+            all        = args.all      if hasattr(args, "all")       else False,
+            sort       = args.sort     if hasattr(args, "sort")      else "due",
+            due_today  = False,
+            due_tomorrow = False,
+            due_on     = None,
+            due_before = None,
+            due_after  = None,
+            due_this_month  = False,
+            due_month = month,
+            due_year   = year,
+            filter     = None,
+            notes      = args.notes    if hasattr(args, "notes")    else False,
+            tags       = args.tags     if hasattr(args, "tags")     else None,
+            categories = args.categories if hasattr(args, "categories") else None,
+        )
+        list_tasks(month_args)
+
+    # ─── Add Task ────────────────────────────────────────────
 def add_task(args):
     t = load_tasks()
     existing_ids = [int(task["id"]) for task in t if "id" in task and str(task["id"]).isdigit()]
@@ -468,7 +799,6 @@ def complete_task(args):
     if completed_any:
         save_tasks(tasks)
 
-
 def delete_task(args):
     tasks = load_tasks()
     ids_to_delete = args.task_id
@@ -557,39 +887,6 @@ def edit_task(args):
                 return
     print(f"Task or subtask {tid} not found.")
 
-def change_status(args, field):
-    """Mark a task or subtask as done/pending/hold (depending on `field`)."""
-    tasks = load_tasks()
-    # find primary or subtask
-    pid, sid = parse_id(args.task_id)
-    for t in tasks:
-        if t['id'] == pid:
-            target = None
-            if sid:
-                for sub in t['subtasks']:
-                    if sub['id'] == args.task_id:
-                        target = sub
-                        break
-            else:
-                target = t
-            if not target:
-                print(f"ID {args.task_id} not found.")
-                return
-            
-            # if completing a primary, ensure no pending subs
-            if field == 'done' and target is t and any(not s.get('done') for s in t['subtasks']):
-                print(f"Cannot complete {args.task_id}: subtasks still pending.")
-                return
-
-            # set the three‐state flag
-            for f in ('done','pending','hold'):
-                target[f] = (f == field)
-            save_tasks(tasks)
-            print(f"{'Subtask' if sid else 'Task'} {args.task_id} marked {field}.")
-            return
-
-    print(f"ID {args.task_id} not found.")
-
 def main():
     parser = argparse.ArgumentParser(
         prog="todo",
@@ -603,14 +900,37 @@ def main():
 
     # Centralized command specs
     commands = {
+        'calendar': {
+            'func': generate_calendar, 'help': 'Show calendar for current month or year',
+            'args': [
+                (['year'],  {
+                    'nargs':   '?',
+                    'type':    int,
+                    'default': date.today().year,
+                    'help':    'Year to display (>=2024; default is current year)'
+                }),
+                (['month'], {
+                    'nargs':   '?',
+                    'type':    int,
+                    'default': None,
+                    'help':    'Month 1–12; omit to print all 12 months'
+                })
+            ]
+        },
         'list': {
             'func': list_tasks, 'help': 'List tasks & subtasks',
             'args': [
                 (['--all'],     {'action':'store_true','help':'Include completed'}),
                 (['--sort'],    {'choices':['due','assigned','priority','id'],'default':'id','help':'Sort primaries'}),
+                (['--filter'], {'choices':['due','assigned','priority'],'default':'id','help':'Filter subtasks'}),
                 (['--notes'],   {'action':'store_true','help':'Display notes'}),
                 (['--tags'],    {'nargs':'?','const':True,'metavar':'TAG','help':'Filter by tag'}),
-                (['--categories'],{'nargs':'?','const':True,'metavar':'CAT','help':'Filter by category'})
+                (['--categories'],{'nargs':'?','const':True,'metavar':'CAT','help':'Filter by category'}),
+                (['--due-today'],   {'action':'store_true', 'help':'Only show tasks due today'}),
+                (['--due-tomorrow'],{'action':'store_true', 'help':'Only show tasks due tomorrow'}),
+                (['--due-this-month'],{'action':'store_true', 'help':'Only show tasks due this month'}),
+                (['--due-year'],   {'type':int,'help':'Only show tasks due in this year'}),
+                (['--due-month'],  {'type':int,'help':'Only show tasks due in this month (1–12)'})
             ]
         },
         'add': {
@@ -653,91 +973,3 @@ def main():
 
 if __name__=='__main__':
     main()
-
-# OLD MAIN FUNCTION BELOW - kept for reference, not used in final code
-
-# def main():
-#     parser = argparse.ArgumentParser(
-#         prog="todo",
-#         description="A CLI based To-Do App\n"
-#                     "Supports: hierarchical subtasks, status (done/pending/hold), due dates, notes, "
-#                     "tags, categories, assignment, rich sorting, batch complete/delete, and more.",
-#         epilog=EXAMPLES,
-#         formatter_class=RawDescriptionHelpFormatter
-#     )
-#     parser.add_argument("--version", action="version",
-#                         version=f"%(prog)s {VERSION}",
-#                         help="Show program version and exit")
-
-
-#     subs = parser.add_subparsers(dest="command", required=True)
-
-#     # List tasks & subtasks
-#     lst = subs.add_parser("list", help="List tasks & subtasks", formatter_class=RawDescriptionHelpFormatter)
-#     lst.add_argument("--all", action="store_true", help="Include completed")
-#     lst.add_argument("--sort", choices=["due","assigned","priority","id"], default="id",
-#                      help="Sort primaries by this field")
-#     lst.add_argument("--notes", action="store_true", help="Show notes in output")
-#     lst.add_argument("--tags", nargs="?", const=True, metavar="TAG", help="Show all tags, or filter by TAG")
-#     lst.add_argument("--categories",nargs="?", const=True, metavar="CATEGORIES", help="Show categories in output")
-#     lst.set_defaults(func=list_tasks)
-
-#     # Add tasks
-#     add = subs.add_parser("add", help="Add a primary task")
-#     add.add_argument("description", help="Task text")
-#     add.add_argument("--due", help="Due date (YYYY-MM-DD)")
-#     add.add_argument("--AssignedTo", help="Assignee")
-#     add.add_argument("--priority", choices=["critical","high","medium","low"], help="Priority level")
-#     add.add_argument("--notes", help="Notes for the task")
-#     add.add_argument("--tags", nargs="*", help="Tags for the task")
-#     add.add_argument("--categories", nargs="*", help="Categories for the task")
-#     add.set_defaults(func=add_task)
-
-#     # Add subtasks
-#     subp = subs.add_parser("subtask", help="Add a subtask under a primary")
-#     subp.add_argument("parent_id", type=int, help="Primary task ID")
-#     subp.add_argument("description", help="Subtask text")
-#     subp.add_argument("--due", help="Due date (YYYY-MM-DD)")
-#     subp.add_argument("--AssignedTo", help="Assignee")
-#     subp.add_argument("--priority", choices=["critical","high","medium","low"], help="Priority level")
-#     subp.add_argument("--notes", help="Notes for the subtask")
-#     subp.add_argument("--tags", nargs="*", help="Tags for the subtask")
-#     subp.add_argument("--categories", nargs="*", help="Categories for the subtask")
-#     subp.set_defaults(func=add_subtask)
-
-#     # Task status changes
-#     pend = subs.add_parser("pending", help="Mark a task/subtask in-progress (yellow ●)")
-#     pend.add_argument("task_id", help="ID or subtask ID (e.g. 1-1)")
-#     pend.set_defaults(func=pending_task)
-
-#     hold = subs.add_parser("hold", help="Mark a task/subtask on-hold (grey ⏸)")
-#     hold.add_argument("task_id", help="ID or subtask ID")
-#     hold.set_defaults(func=hold_task)
-
-#     comp = subs.add_parser("complete", help="Mark a task/subtask done (green ✓)")
-#     comp.add_argument("task_id", nargs="+", help="ID or subtask ID")
-#     comp.set_defaults(func=complete_task)
-
-#     # Delete tasks or subtasks
-#     dele = subs.add_parser("delete", help="Delete a task or subtask")
-#     dele.add_argument("task_id", nargs="+", help="ID or subtask ID")
-#     dele.set_defaults(func=delete_task)
-
-#     # Edit tasks or subtasks
-#     edt = subs.add_parser("edit", help="Edit a task or subtask")
-#     edt.add_argument("task_id", help="ID or subtask ID")
-#     edt.add_argument("--description", help="New description")
-#     edt.add_argument("--due", help="New due date (YYYY-MM-DD)")
-#     edt.add_argument("--AssignedTo", help="New assignee")
-#     edt.add_argument("--priority", choices=["critical","high","medium","low"], help="New priority")
-#     edt.add_argument("--notes", help="New notes for the task/subtask")
-#     edt.add_argument("--tags", nargs="*", help="New tags for the task/subtask")
-#     edt.add_argument("--categories", nargs="*", help="New categories for the task/subtask")
-#     edt.set_defaults(func=edit_task)
-
-#     argcomplete.autocomplete(parser)
-#     args = parser.parse_args()
-#     args.func(args)
-
-# if __name__ == "__main__":
-#     main()
