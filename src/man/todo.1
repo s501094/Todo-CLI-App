@@ -1,0 +1,150 @@
+.TH TODO 1 "2025-06-04" "v2.4.1" "User Commands"
+.SH NAME
+todo \- Command-line To-Do List Manager
+
+.SH SYNOPSIS
+.B todo
+\[
+.I COMMAND
+] \[
+.I OPTIONS
+] \[
+.I ARGUMENTS
+]
+
+.SH DESCRIPTION
+.B todo
+is a Python-based CLI application for managing hierarchical to-do lists, subtasks, priorities, tags, categories, notes, and more. Data is stored in \$HOME/.todo\_data.json for persistent, private usage.
+
+.SH COMMANDS
+.TP
+.B new
+Add a new primary task.
+.TP
+.B subtask
+Add a subtask under a primary task.
+.TP
+.B pending
+Mark a task or subtask as “in-progress.”
+.TP
+.B hold
+Mark a task or subtask as “on-hold.”
+.TP
+.B complete
+Mark one or more tasks/subtasks as complete.
+.TP
+.B delete
+Delete one or more tasks/subtasks.
+.TP
+.B edit
+Edit (overwrite) fields on a task or subtask.
+.TP
+.B update
+Append to fields (notes, tags, categories, priority, description) on a task or subtask.
+.TP
+.B append
+Append freeform text to a task or subtask’s description or notes.
+.TP
+.B list
+List tasks and subtasks, with options for filtering, sorting, and display customization.
+.TP
+.B calendar
+Show a colored calendar view of due tasks (current month by default).
+.TP
+.B --version
+Show the application version.
+.TP
+.B -h, --help
+Show the help message.
+
+.SH OPTIONS
+.TP
+.BR --due " \[DATE]"
+Set or filter by due date (YYYY-MM-DD, or natural language like “tomorrow,” “1 week,” etc.).
+.TP
+.BR --AssignedTo " \[NAME]"
+Assign the task or subtask to a user.
+.TP
+.BR --priority " \[critical|high|medium|low]"
+Set or update priority level (colorized in output).
+.TP
+.BR --notes " \[TEXT]"
+Attach or append notes to a task or subtask.
+.TP
+.BR --tags " \[TAG1 TAG2 ...]"
+Attach or append tags for filtering or categorization.
+.TP
+.BR --categories " \[CAT1 CAT2 ...]"
+Attach or append categories for filtering or organization.
+.TP
+.BR --all
+Show all tasks (including completed) when listing.
+.TP
+.BR --sort " \[id|due|assigned|priority]"
+Sort tasks in listings.
+.TP
+.BR --due-today
+Filter list to tasks due today.
+.TP
+.BR --due-tomorrow
+Filter list to tasks due tomorrow.
+.TP
+.BR --due-this-month
+Filter list to tasks due in the current month.
+.TP
+.BR --due-year " \[YYYY]      --due-month "\[MM]"
+Filter list to tasks due in a specific year and month.
+.TP
+.BR --help
+Show help message for any command.
+
+.SH EXAMPLES
+.TP
+Add a primary task:
+.B todo new "Write report" --due 2025-06-10 --AssignedTo Alice --priority high --notes "Include exec summary" --tags work urgent --categories business
+.TP
+Add a subtask:
+.B todo subtask 1 "Draft outline" --due 2025-06-12 --notes "Use Q2 template" --tags outline
+.TP
+List all tasks, sorted by due date:
+.B todo list --sort due
+.TP
+List tasks with a specific tag:
+.B todo list --tags urgent
+.TP
+Mark a subtask as in-progress:
+.B todo pending 1-2
+.TP
+Complete multiple tasks/subtasks:
+.B todo complete 1-1 2 3
+.TP
+Delete multiple tasks or subtasks:
+.B todo delete 4 5-2
+.TP
+Edit (overwrite) a task’s description and due date:
+.B todo edit 3 --description "Update requirements" --due 2025-07-01
+.TP
+Append a note and tag to a task:
+.B todo update 3 --notes "Follow-up needed" --tags followup
+.TP
+Append freeform text to a subtask’s description:
+.B todo append 2-1 --AD "additional context here"
+.TP
+Show a calendar of due tasks for June 2025:
+.B todo calendar 2025 06
+
+.SH FILES
+.TP
+.I \$HOME/.todo\_data.json
+The JSON data file used for storing tasks.
+
+.SH AUTHOR
+Written by Tyler Ellis (Ty / skrody).
+
+.SH SEE ALSO
+.BR python (1),
+.BR pip (1),
+.BR argcomplete (1)
+
+.SH LICENSE
+MIT License
