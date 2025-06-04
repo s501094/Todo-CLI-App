@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['todo_tester.py'],
+    ['todo_interactive.py'],
     pathex=[],
     binaries=[],
     datas=[],

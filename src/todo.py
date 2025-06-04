@@ -786,7 +786,7 @@ def update_task(args):
             return
         for sub in t["subtasks"]:
             if sub["id"] == tid:
-                if args.description:
+                if args.description is not None:
                     sub["description"] = args.description
                 if args.due:
                     sub["due"] = due_str(args)
@@ -796,6 +796,8 @@ def update_task(args):
                     sub["priority"] = args.priority
                 if args.notes is not None:
                     sub["notes"] += ", " + args.notes
+                else:
+                    sub["notes"] += args.notes
                 if args.tags is not None:
                     sub["tags"] += args.tags or []
                 if args.categories is not None:
@@ -881,12 +883,18 @@ def append_task(args):
     for t in tasks:
         if str(t["id"]) == tid:
             if args.AD:
-                t["description"] += " " + (" ".join(args.AD))
+                if t["description"] is not None:
+                    t["description"] += " " + (" ".join(args.AD))
+                else:
+                    t["description"] = " ".join(args.AD)
                 save_tasks(tasks)
                 print(f"Appended to task {tid} description.")
                 return
             if args.AN:
-                t["notes"] += " " + (" ".join(args.AN))
+                if t["notes"] is not None:
+                    t["notes"] += " " + (" ".join(args.AN))
+                else:
+                    t["notes"] = " ".join(args.AN)
                 save_tasks(tasks)
                 print(f"Appended to task {tid} notes.")
                 return
@@ -909,7 +917,7 @@ def main():
     parser = argparse.ArgumentParser(
         prog="todo",
         description=(
-            "A CLI To-Do App with subtasks, status, due dates, notes, tags, "
+            "A CLI based To-Do App for those that prefer to live in the terminal. This comes with subtasks, status, due dates, notes, tags,/ "
             "categories, and rich sorting."
         ),
         epilog=EXAMPLES,
@@ -1062,4 +1070,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        # Catch Ctrl+C anywhere and exit cleanly
+        print("\nExiting. Goodbye!")
