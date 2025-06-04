@@ -9,6 +9,7 @@ import sys
 import shutil
 import textwrap
 import argcomplete  # type: ignore
+import shlex        # ← new: used to split the input line into shell‐like tokens
 from argparse import RawDescriptionHelpFormatter
 from datetime import datetime, date, timedelta
 from tabulate import tabulate  # type: ignore
@@ -22,70 +23,22 @@ DATE_FMT = "%Y-%m-%d"
 default_due = (date.today() + timedelta(days=4)).isoformat()
 
 EXAMPLES = r"""
-Examples:
+Examples (in the interactive session):
 
-  # Show app version
-  todo --version
+  # Add a task:
+  > new "Write report" --due 2025-06-10 --AssignedTo Alice --priority high --notes "Include exec summary" --tags work urgent --categories business
 
-  # Add a primary task (with optional due date, assignee, notes, tags, categories)
-  todo new "Write report" --due 2024-06-10 --AssignedTo Alice --priority high \
-    --notes "Include exec summary" --tags work urgent --categories business reports
+  # List tasks:
+  > list
 
-  # Add a subtask under task 1
-  todo subtask 1 "Draft outline" --due 2024-06-12 --notes "Use Q2 template" --tags outline
+  # Mark a subtask in progress:
+  > pending 1-2
 
-  # Mark as in-progress or on-hold
-  todo pending 1-1
-  todo hold 1
+  # Complete multiple items:
+  > complete 1-1 2 3
 
-  # Complete one or more tasks/subtasks
-  todo complete 1-1 3 5
-
-  # Delete one or more tasks/subtasks
-  todo delete 9 10 11 3-2
-
-  # Edit any field on a task/subtask
-  todo edit 3 --description "Update requirements doc" \
-    --due tomorrow --notes "Ask PM for changes" --tags docs requirements
-
-  # Update (append) notes, tags, categories, or priority on a task/subtask
-  todo update 3 --notes "Follow-up" --tags followup
-
-  # Append to description or notes
-  todo append 3 --AD "extra detail" --AN "more notes"
-
-  # List only active tasks (hides done by default)
-  todo list
-
-  # List all tasks including completed
-  todo list --all
-
-  # Sort tasks
-  todo list --sort due       # by due date
-  todo list --sort assigned  # by assignee
-  todo list --sort priority  # by priority level
-
-  # Filter by due date
-  todo list --due-today
-  todo list --due-tomorrow
-  todo list --due-this-month
-  todo list --due-year 2025 --due-month 06
-
-  # Show notes, tags or categories columns
-  todo list --notes
-  todo list --tags
-  todo list --categories
-
-  # Filter by tag or category
-  todo list --tags urgent
-  todo list --categories work
-
-  # Calendar view (days with due-tasks are colored by priority)
-  todo calendar              # current month
-  todo calendar 2025         # full year 2025
-  todo calendar 2025 06      # June 2025
+  # Press Ctrl+C to exit the session
 """
-
 
 def get_data_file_path():
     """Ensure ~/.todo_data.json exists (copy bundled if frozen)."""
@@ -99,9 +52,7 @@ def get_data_file_path():
             json.dump([], f)
     return user_path
 
-
 DATA_FILE = get_data_file_path()
-
 
 def load_tasks():
     """Load and normalize tasks, recovering from JSON errors."""
@@ -125,12 +76,10 @@ def load_tasks():
         t.setdefault("categories", [])
     return tasks
 
-
 def save_tasks(tasks):
     """Persist tasks back to JSON."""
     with open(DATA_FILE, "w") as f:
         json.dump(tasks, f, indent=2)
-
 
 def get_all_tags_and_categories(tasks):
     tags = set()
@@ -142,7 +91,6 @@ def get_all_tags_and_categories(tasks):
             tags.update(sub.get("tags", []))
             categories.update(sub.get("categories", []))
     return sorted(tags), sorted(categories)
-
 
 def wrap_and_color(text, width, color=None, prefix=""):
     """
@@ -162,7 +110,6 @@ def wrap_and_color(text, width, color=None, prefix=""):
             for i, ln in enumerate(lines)
         )
 
-
 def color_status(t):
     """
     Return an ANSI‐colored one‐char status:
@@ -179,7 +126,6 @@ def color_status(t):
         return Fore.LIGHTBLACK_EX + "⏸" + Style.RESET_ALL
     return Fore.RED + "✗" + Style.RESET_ALL
 
-
 def color_priority(prio):
     """
     Return ANSI‐colored priority text.
@@ -187,12 +133,11 @@ def color_priority(prio):
     p = (prio or "low").lower()
     col = {
         "critical": Fore.MAGENTA,
-        "high": Fore.YELLOW,
-        "medium": Fore.CYAN,
-        "low": Fore.BLUE
+        "high":     Fore.YELLOW,
+        "medium":   Fore.CYAN,
+        "low":      Fore.BLUE
     }.get(p, Fore.BLUE)
     return col + p + Style.RESET_ALL
-
 
 def parse_id(tid):
     """
@@ -200,7 +145,6 @@ def parse_id(tid):
     """
     parts = str(tid).split("-", 1)
     return int(parts[0]), parts[1] if len(parts) > 1 else None
-
 
 def find(tasks, tid):
     """
@@ -216,7 +160,6 @@ def find(tasks, tid):
                         return t, sub
             return t, None
     return None, None
-
 
 def change_status(args, field):
     """
@@ -249,7 +192,6 @@ def change_status(args, field):
 
     if any_saved:
         save_tasks(tasks)
-
 
 def list_tasks(args):
     tasks = load_tasks()
@@ -335,14 +277,15 @@ def list_tasks(args):
     reserved = 4 + 3 + 10 + 15 + 8 + 20
     avail = max(15, term_w - reserved)
 
-    # Wrap notes sooner: allocate 30% of available width to notes
+    # Wrap notes sooner: allocate only ~30% of width to Notes when narrow
     if avail < 150:
         desc_w = max(10, int(avail * 0.4))
         notes_w = max(10, int((avail - desc_w) * 0.5))
     else:
-        desc_w = max(10,int(avail *0.2))
+        # if very wide, just allocate 20% to description and 30% to notes
+        desc_w = max(10, int(avail * 0.2))
         notes_w = max(10, int((avail - desc_w) * 0.3))
-   
+
     def primary_key(t):
         if args.sort == "due":
             ds = t.get("due") or default_due
@@ -390,8 +333,8 @@ def list_tasks(args):
 
         prio_col = {
             "critical": Fore.MAGENTA + prio + Style.RESET_ALL,
-            "high": Fore.YELLOW + prio + Style.RESET_ALL,
-            "medium": Fore.CYAN + prio + Style.RESET_ALL
+            "high":     Fore.YELLOW + prio + Style.RESET_ALL,
+            "medium":   Fore.CYAN + prio + Style.RESET_ALL
         }.get(prio, Fore.BLUE + prio + Style.RESET_ALL)
 
         base_row = [tid, desc_col, status_col, due_date, assigned, prio_col, notes_col]
@@ -421,12 +364,12 @@ def list_tasks(args):
             sprio = sub.get("priority", "low").lower()
             sp = {
                 "critical": Fore.MAGENTA + sprio + Style.RESET_ALL,
-                "high": Fore.YELLOW + sprio + Style.RESET_ALL,
-                "medium": Fore.CYAN + sprio + Style.RESET_ALL
+                "high":     Fore.YELLOW + sprio + Style.RESET_ALL,
+                "medium":   Fore.CYAN + sprio + Style.RESET_ALL
             }.get(sprio, Fore.BLUE + sprio + Style.RESET_ALL)
-           
-            notes_lines = textwrap.wrap(sub.get("notes",""), notes_w) or [""]
-            notes_col = "\n".join(notes_lines)
+
+            notes_lines = textwrap.wrap(sub.get("notes", ""), notes_w) or [""]
+            notes_col   = "\n".join(notes_lines)
 
             sub_row = [
                 "", "├─ " + s_desc, s_sym, sub.get("due", ""),
@@ -456,14 +399,13 @@ def list_tasks(args):
         tablefmt="fancy_grid"
     ))
 
-
 def generate_calendar(args):
     tasks = load_tasks()
     _PRIORITY_COLORS = {
         "critical": Fore.RED,
-        "high": Fore.YELLOW,
-        "medium": Fore.CYAN,
-        "low": Fore.BLUE,
+        "high":     Fore.YELLOW,
+        "medium":   Fore.CYAN,
+        "low":      Fore.BLUE,
     }
     _PRIORITY_RANK = {p: i for i, p in enumerate(["critical", "high", "medium", "low"])}
 
@@ -533,18 +475,17 @@ def generate_calendar(args):
             print(spacer.join(line_parts))
         print()
 
-
 def print_single_month(year: int, month: int, due_map: dict[int, str], args):
     _PRIORITY_COLORS = {
         "critical": Fore.RED,
-        "high": Fore.YELLOW,
-        "medium": Fore.CYAN,
-        "low": Fore.BLUE,
+        "high":     Fore.YELLOW,
+        "medium":   Fore.CYAN,
+        "low":      Fore.BLUE,
     }
     _PRIORITY_RANK = {p: i for i, p in enumerate(["critical", "high", "medium", "low"])}
 
     width = 20
-    hdr = f"{calendar.month_name[month]} {year}"
+    hdr   = f"{calendar.month_name[month]} {year}"
     print(hdr.center(width))
     print("Mo Tu We Th Fr Sa Su")
     for wk in calendar.monthcalendar(year, month):
@@ -578,7 +519,6 @@ def print_single_month(year: int, month: int, due_map: dict[int, str], args):
     )
     list_tasks(month_args)
 
-
 def new_task(args):
     tasks = load_tasks()
     existing_ids = [int(task["id"]) for task in tasks if "id" in task and str(task["id"]).isdigit()]
@@ -602,7 +542,6 @@ def new_task(args):
     })
     save_tasks(tasks)
     print(f"Task {nid} added.")
-
 
 def add_subtask(args):
     tasks = load_tasks()
@@ -630,7 +569,6 @@ def add_subtask(args):
             return
     print(f"Parent task {args.parent_id} not found.")
 
-
 def pending_task(args):
     tid = args.task_id
     tasks = load_tasks()
@@ -641,8 +579,8 @@ def pending_task(args):
                 for sub in t["subtasks"]:
                     if sub["id"] == tid:
                         sub["pending"] = True
-                        sub["done"] = False
-                        sub["hold"] = False
+                        sub["done"]    = False
+                        sub["hold"]    = False
                         save_tasks(tasks)
                         print(f"Subtask {tid} marked pending.")
                         return
@@ -651,13 +589,12 @@ def pending_task(args):
         for t in tasks:
             if str(t["id"]) == tid:
                 t["pending"] = True
-                t["done"] = False
-                t["hold"] = False
+                t["done"]    = False
+                t["hold"]    = False
                 save_tasks(tasks)
                 print(f"Task {tid} marked pending.")
                 return
         print(f"Task {tid} not found.")
-
 
 def hold_task(args):
     tid = args.task_id
@@ -668,8 +605,8 @@ def hold_task(args):
             if str(t["id"]) == pid:
                 for sub in t["subtasks"]:
                     if sub["id"] == tid:
-                        sub["hold"] = True
-                        sub["done"] = False
+                        sub["hold"]    = True
+                        sub["done"]    = False
                         sub["pending"] = False
                         save_tasks(tasks)
                         print(f"Subtask {tid} marked on-hold.")
@@ -678,14 +615,13 @@ def hold_task(args):
     else:
         for t in tasks:
             if str(t["id"]) == tid:
-                t["hold"] = True
-                t["done"] = False
+                t["hold"]    = True
+                t["done"]    = False
                 t["pending"] = False
                 save_tasks(tasks)
                 print(f"Task {tid} marked on-hold.")
                 return
         print(f"Task {tid} not found.")
-
 
 def complete_task(args):
     ids_to_complete = args.task_id if isinstance(args.task_id, list) else [args.task_id]
@@ -730,7 +666,6 @@ def complete_task(args):
     if completed_any:
         save_tasks(tasks)
 
-
 def delete_task(args):
     tasks = load_tasks()
     ids_to_delete = args.task_id
@@ -760,7 +695,6 @@ def delete_task(args):
                 print(f"Task {tid} not found.")
     if deleted_any:
         save_tasks(tasks)
-
 
 def update_task(args):
     tid = str(args.task_id)
@@ -805,7 +739,6 @@ def update_task(args):
                 return
     print(f"Task or subtask {tid} not found.")
 
-
 def due_str(args):
     if args.due == "today":
         return date.today().isoformat()
@@ -826,7 +759,6 @@ def due_str(args):
     if "months" in args.due:
         return (date.today() + timedelta(days=int(args.due.split()[0]) * 30)).isoformat()
     return args.due
-
 
 def edit_task(args):
     tid = str(args.task_id)
@@ -871,7 +803,6 @@ def edit_task(args):
                 return
     print(f"Task or subtask {tid} not found.")
 
-
 def append_task(args):
     """
     Append text to a task or subtask’s description or notes.
@@ -904,8 +835,10 @@ def append_task(args):
                     return
     print(f"Task or subtask {tid} not found.")
 
-
-def main():
+def build_parser():
+    """
+    Build and return an ArgumentParser configured with all subcommands.
+    """
     parser = argparse.ArgumentParser(
         prog="todo",
         description=(
@@ -924,16 +857,16 @@ def main():
             "help": "Show calendar for current month or year",
             "args": [
                 (["year"], {
-                    "nargs": "?",
-                    "type": int,
+                    "nargs":   "?",
+                    "type":    int,
                     "default": date.today().year,
-                    "help": "Year to display (>=2024; default is current year)"
+                    "help":    "Year to display (>=2024; default is current year)"
                 }),
                 (["month"], {
-                    "nargs": "?",
-                    "type": int,
+                    "nargs":   "?",
+                    "type":    int,
                     "default": None,
-                    "help": "Month 1–12; omit to print all 12 months"
+                    "help":    "Month 1–12; omit to print all 12 months"
                 })
             ]
         },
@@ -941,16 +874,16 @@ def main():
             "func": list_tasks,
             "help": "List tasks & subtasks",
             "args": [
-                (["--all"], {"action": "store_true", "help": "Include completed"}),
-                (["--sort"], {"choices": ["due", "assigned", "priority", "id"], "default": "id", "help": "Sort primaries"}),
-                (["--notes"], {"action": "store_true", "help": "Display notes"}),
-                (["--tags"], {"nargs": "?", "const": True, "metavar": "TAG", "help": "Filter by tag"}),
-                (["--categories"], {"nargs": "?", "const": True, "metavar": "CAT", "help": "Filter by category"}),
-                (["--due-today"], {"action": "store_true", "help": "Only show tasks due today"}),
-                (["--due-tomorrow"], {"action": "store_true", "help": "Only show tasks due tomorrow"}),
-                (["--due-this-month"], {"action": "store_true", "help": "Only show tasks due this month"}),
-                (["--due-year"], {"type": int, "help": "Only show tasks due in this year"}),
-                (["--due-month"], {"type": int, "help": "Only show tasks due in this month (1–12)"})
+                (["--all"],           {"action": "store_true", "help": "Include completed"}),
+                (["--sort"],          {"choices": ["due", "assigned", "priority", "id"], "default": "id", "help": "Sort primaries"}),
+                (["--notes"],         {"action": "store_true", "help": "Display notes"}),
+                (["--tags"],          {"nargs": "?", "const": True, "metavar": "TAG", "help": "Filter by tag"}),
+                (["--categories"],    {"nargs": "?", "const": True, "metavar": "CAT", "help": "Filter by category"}),
+                (["--due-today"],     {"action": "store_true", "help": "Only show tasks due today"}),
+                (["--due-tomorrow"],  {"action": "store_true", "help": "Only show tasks due tomorrow"}),
+                (["--due-this-month"],{"action": "store_true", "help": "Only show tasks due this month"}),
+                (["--due-year"],      {"type": int, "help": "Only show tasks due in this year"}),
+                (["--due-month"],     {"type": int, "help": "Only show tasks due in this month (1–12)"})
             ]
         },
         "new": {
@@ -1056,10 +989,45 @@ def main():
             sp.add_argument(*flags, **params)
         sp.set_defaults(func=spec["func"])
 
+    # Enable argcomplete in case user has it installed
     argcomplete.autocomplete(parser)
-    args = parser.parse_args()
-    args.func(args)
+    return parser
 
+def main():
+    parser = build_parser()
+
+    print("Welcome to the Todo‐CLI session.  Press Ctrl+C to exit.\n")
+    while True:
+        try:
+            # 1) prompt the user, 2) read a line
+            line = input("todo> ").strip()
+            if not line:
+                continue
+
+            # 3) split into shell‐like tokens (honors quotes)
+            try:
+                tokens = shlex.split(line)
+            except ValueError as ve:
+                print(f"Error parsing input: {ve}")
+                continue
+
+            # 4) parse the tokens exactly as if they were sys.argv[1:]
+            try:
+                args = parser.parse_args(tokens)
+            except SystemExit:
+                # argparse already printed an error or help, so just continue
+                continue
+
+            # 5) call the handler function
+            args.func(args)
+
+        except KeyboardInterrupt:
+            # User pressed Ctrl+C → exit the loop
+            print("\nExiting. Goodbye!")
+            break
+        except Exception as e:
+            # Catch any unexpected error so the session doesn't die.
+            print(f"Unexpected error: {e}")
 
 if __name__ == "__main__":
     main()
