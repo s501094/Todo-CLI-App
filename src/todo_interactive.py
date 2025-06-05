@@ -26,19 +26,66 @@ default_due = (date.today() + timedelta(days=4)).isoformat()
 EXAMPLES = r"""
 Examples (in the interactive session):
 
-  # Add a task:
-  > new "Write report" --due 2025-06-10 --AssignedTo Alice --priority high --notes "Include exec summary" --tags work urgent --categories business
+  # Show app version
+  todo --version
 
-  # List tasks:
-  > list
+  # Add a primary task (with optional due date, assignee, notes, tags, categories)
+  new "Write report" --due 2024-06-10 --AssignedTo Alice --priority high \
+    --notes "Include exec summary" --tags work urgent --categories business reports
 
-  # Mark a subtask in progress:
-  > pending 1-2
+  # Add a subtask under task 1
+  subtask 1 "Draft outline" --due 2024-06-12 --notes "Use Q2 template" --tags outline
 
-  # Complete multiple items:
-  > complete 1-1 2 3
+  # Mark as in-progress or on-hold
+  pending 1-1
+  hold 1
 
-  # Press Ctrl+C to exit the session
+  # Complete one or more tasks/subtasks
+  complete 1-1 3 5
+
+  # Delete one or more tasks/subtasks
+  delete 9 10 11 3-2
+
+  # Edit any field on a task/subtask
+  edit 3 --description "Update requirements doc" \
+    --due tomorrow --notes "Ask PM for changes" --tags docs requirements
+
+  # Update (append) notes, tags, categories, or priority on a task/subtask
+  update 3 --notes "Follow-up" --tags followup
+
+  # Append to description or notes
+  append 3 --AD "extra detail" --AN "more notes"
+
+  # List only active tasks (hides done by default)
+  list
+
+  # List all tasks including completed
+  list --all
+
+  # Sort tasks
+  list --sort due       # by due date
+  list --sort assigned  # by assignee
+  list --sort priority  # by priority level
+
+  # Filter by due date
+  list --due-today
+  list --due-tomorrow
+  list --due-this-month
+  list --due-year 2025 --due-month 06
+
+  # Show notes, tags or categories columns
+  list --notes
+  list --tags
+  list --categories
+
+  # Filter by tag or category
+  list --tags urgent
+  list --categories work
+
+  # Calendar view (days with due-tasks are colored by priority)
+  calendar              # current month
+  calendar 2025         # full year 2025
+  calendar 2025 06      # June 2025
 """
 
 def get_data_file_path():
