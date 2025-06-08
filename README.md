@@ -1,192 +1,170 @@
-# Todo CLI Application v2.0.6
+Todo CLI Application v2.0.6
 
-A Python-based command-line to-do list manager with hierarchical subtasks, status flags, priorities, tags, categories, notes, and colorized output.
-Stores all data in `~/.todo_data.json` (no external backend).
+A Python-based command-line to-do list manager with hierarchical subtasks, status flags, priorities, tags, categories, notes, colorized output—and built-in reminders.
+Stores all data in ~/.todo_data.json (no external backend).
 
-## Features
+Features
+	•	Primary tasks with unlimited subtasks (IDs like 1, 1-1, 1-2, etc.)
+	•	Statuses
+	•	✗ Not Started (red)
+	•	● Pending / In-Progress (yellow)
+	•	⏸ Hold / Paused (grey)
+	•	✓ Done (green)
+	•	Priority levels: critical, high, medium, low (colorized)
+	•	Notes field for any task/subtask
+	•	Tags and Categories for searching/filtering
+	•	Batch operations: mark or delete multiple tasks/subtasks in one command
+	•	Sorting: by id, due, assigned, or priority
+	•	Tab-completion via argcomplete
+	•	Auto-creation of ~/.todo_data.json on first run
+	•	Built-in reminders: schedule desktop notifications for any task/subtask
+	•	Standalone packaging with PyInstaller (no Python needed for end users)
+	•	Built-in --version flag
 
-* **Primary tasks** with unlimited **subtasks** (IDs like `1`, `1-1`, `1-2`, etc.)
-* **Statuses**:
+Prerequisites
+	•	Python 3.12 (use your own virtual environment)
+	•	pip for installing dependencies
 
-  * ✗ Not Started (red)
-  * ● Pending / In-Progress (yellow)
-  * ⏸ Hold / Paused (grey)
-  * ✓ Done (green)
-* **Priority** levels: `critical`, `high`, `medium`, `low` (colorized)
-* **Notes** field for any task/subtask
-* **Tags** and **categories** for searching/filtering
-* **Batch operations:** mark or delete multiple tasks/subtasks in one command
-* **Sorting:** by `id`, `due`, `assigned`, or `priority`
-* **Tab-completion** via `argcomplete`
-* **Auto-creation** of `~/.todo_data.json` on first run
-* **Standalone packaging** with PyInstaller (no Python needed for end users)
-* **Built-in** `--version` flag
+Installation
+	1.	Clone or download this repo:
 
-## Prerequisites
+git clone https://github.com/s501094/Todo-CLI-App.git
+cd Todo-CLI-App
 
-* Python 3.12 (run in your own virtual environment)
-* [pip](https://pip.pypa.io/) for installing dependencies
 
-## Installation
+	2.	Activate your Python environment:
 
-1. Clone or download this repo:
+source /home/<username>/.venv/3_12_2/bin/activate
 
-   ```bash
-   git clone https://github.com/s501094/Todo-CLI-App.git
-   cd todo-cli
-   ```
 
-2. Activate your Python environment:
+	3.	Install required packages:
 
-   ```bash
-   source /home/<homeDir>/.venv/3_12_2/bin/activate
-   ```
+pip install -r requirements.txt
 
-3. Install required packages:
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+	4.	Make the script executable (Unix/macOS/Linux):
 
-4. Make the script executable (Unix/macOS/Linux):
+chmod +x todo.py
+ln -s $(pwd)/todo.py /usr/local/bin/todo
 
-   ```bash
-   chmod +x todo.py
-   ln -s $(pwd)/todo.py /usr/local/bin/todo
-   ```
-   or copy the dist/Linux/todo into a folder already in your $PATH variable.
-   
-5. Enable tab-completion (optional):
+Or copy the PyInstaller-built binary to a folder in your PATH.
 
-   ```bash
-   # Add to ~/.bashrc or ~/.zshrc
-   eval "$(register-python-argcomplete todo)"
-   ```
+	5.	Enable tab-completion (optional):
 
-## Usage
+# Add to ~/.bashrc or ~/.zshrc:
+eval "$(register-python-argcomplete todo)"
 
-Invoke via `todo ...` (or `python todo.py ...`).
-All examples assume you have the script aliased as `todo`.
 
-### Version
 
-```bash
+Usage
+
+Invoke via todo … (or python todo.py …). All examples assume you use the todo alias.
+
+Version
+
 todo --version
-```
 
-### Add a primary task
+Add a primary task
 
-```bash
-todo add "Write report" --due 2025-06-10 --AssignedTo Alice --priority high --notes "Include exec summary" --tags work urgent --categories business
-```
+todo add "Write report" \
+     --due 2025-06-10 \
+     --AssignedTo Alice \
+     --priority high \
+     --notes "Include exec summary" \
+     --tags work urgent \
+     --categories business
 
-### Add a subtask
+Add a subtask
 
-```bash
-todo subtask 1 "Draft outline" --due 2025-06-12 --notes "Use Q2 template" --tags outline
-```
+todo subtask 1 "Draft outline" \
+     --due 2025-06-12 \
+     --notes "Use Q2 template" \
+     --tags outline
 
-### Change status
+Change status
 
-```bash
-todo pending 1-1         # Mark subtask in-progress (pending)
-todo hold 1              # Put task on hold
-```
+todo pending 1-1     # Mark subtask in-progress (●)
+todo hold 1          # Put task on hold (⏸)
 
-### Complete tasks (batch)
+Complete tasks (batch)
 
-```bash
-todo complete 1-1 2 3    # Mark multiple tasks or subtasks complete
-```
+todo complete 1-1 2 3    # Mark multiple tasks/subtasks done (✓)
 
-### Delete tasks/subtasks (batch)
+Delete tasks/subtasks (batch)
 
-```bash
-todo delete 9 10 3-2     # Deletes multiple tasks and/or subtasks
-```
+todo delete 9 10 3-2     # Deletes multiple tasks/subtasks
 
-### Edit a task or subtask
+Edit a task or subtask
 
-```bash
-todo edit 1 --description "Finalize report" --due 2025-06-12 --priority critical --notes "Manager review" --tags urgent review --categories work
-```
+todo edit 1 \
+     --description "Finalize report" \
+     --due 2025-06-12 \
+     --priority critical \
+     --notes "Manager review" \
+     --tags urgent review \
+     --categories work
 
-### List tasks
+List tasks
 
-```bash
-todo list                    # Show active tasks (not done), sorted by ID
-todo list --all              # Include completed tasks
-todo list --sort due         # Sort by due date
-todo list --sort assigned    # Sort by assignee
-todo list --sort priority    # Sort by priority
-```
+todo list                # Show active tasks (not done), sorted by ID
+todo list --all          # Include completed tasks
+todo list --sort due     # Sort by due date
+todo list --sort assigned  # Sort by assignee
+todo list --sort priority  # Sort by priority
+todo list --notes        # Include the Notes column
+todo list --tags         # Show all available tags
+todo list --categories   # Show all available categories
+todo list --tags urgent review   # Filter by tag
+todo list --categories work      # Filter by category
+todo list --tags --categories    # Show Tags/Categories columns
 
-### Tags & Categories
+Reminders
 
-```bash
-todo list --tags                 # Show all recognized tags
-todo list --categories           # Show all recognized categories
-todo list --tags urgent work     # Filter and show only tasks with specified tags
-todo list --categories work      # Filter and show only tasks in specified categories
-todo list --tags --categories    # Show columns for tags/categories in output
-```
+todo remind 3                   # Remind on task 3 at 09:00 on its due date
+todo remind 3-1 --before 1      # Remind one day before subtask 3-1 at 09:00
+todo remind 5 --at 14:30        # Remind task 5 at 14:30 on its due date
+todo remind 7-2 --before 2 --at 08:00  # Two days before at 08:00
 
-### Show notes in output
+Packaging as a Standalone Binary
 
-```bash
-todo list --notes
-```
+To bundle into a single executable:
 
-## Packaging as a Standalone Binary
-
-To bundle into a single executable (`dist/todo`):
-
-```bash
 pyinstaller \
   --onefile \
   --name todo \
   --clean \
   todo.py
-```
 
-Copy the binary to your `PATH`:
+Copy the resulting dist/todo into your PATH:
 
-```bash
 sudo cp dist/todo /usr/local/bin/
 chmod +x /usr/local/bin/todo
-```
 
-## Man Page
+Man Page
 
-A `todo.1` man page is included. To install:
+A man/todo.1 page is included. To install:
 
-```bash
-sudo mkdir /usr/local/share/man/man1
+sudo mkdir -p /usr/local/share/man/man1
 sudo cp man/todo.1 /usr/local/share/man/man1/
 sudo mandb
-```
 
-Then run:
+Then:
 
-```bash
 man todo
-```
 
-## File Location
+File Location
+	•	Data file: ~/.todo_data.json
+Stores everything—tasks, subtasks, status, due dates, notes, tags, categories—in plain JSON.
 
-* Data file: `~/.todo_data.json`
-* Stores all tasks, subtasks, status, tags, categories, and notes in plain JSON format.
+Dependencies
+	•	colorama
+	•	tabulate
+	•	argcomplete
 
-## Dependencies
+License
 
-* [colorama](https://pypi.org/project/colorama/)
-* [tabulate](https://pypi.org/project/tabulate/)
-* [argcomplete](https://pypi.org/project/argcomplete/)
+Released under the MIT License.
 
-## License
+⸻
 
-MIT License
-
----
-
-**Contributions welcome!**
+Contributions welcome!
